@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "ApplyPilot — Verified Quick Apply",
+  "version": "0.1.0",
+  "description": "Fill Greenhouse and Lever applications using only facts you have verified.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://*.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://jobs.eu.lever.co/*"
+  ],
+  "action": {
+    "default_title": "ApplyPilot",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [{
+    "matches": [
+      "https://*.greenhouse.io/*",
+      "https://jobs.lever.co/*",
+      "https://jobs.eu.lever.co/*"
+    ],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
