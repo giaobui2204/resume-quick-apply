@@ -1,11 +1,11 @@
-import { discoverFields, fillField, type ExtensionProfile, type FieldMatch } from "./field-mapper";
+import { discoverFields, fillField, type FieldMatch } from "./field-mapper";
+import { loadVerifiedProfile } from "./profile-storage";
 
 let matches: FieldMatch[] = [];
 
 async function mount() {
   if (document.querySelector("#applypilot-panel")) return;
-  const result = await chrome.storage.local.get("verifiedProfile");
-  const profile = result.verifiedProfile as ExtensionProfile | undefined;
+  const profile = await loadVerifiedProfile();
   matches = profile?.verifiedAt ? discoverFields(profile) : [];
   const captcha = Boolean(document.querySelector('[class*="captcha" i], iframe[src*="captcha" i], [data-sitekey]'));
   const panel = document.createElement("aside");

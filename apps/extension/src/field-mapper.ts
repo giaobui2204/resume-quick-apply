@@ -1,11 +1,4 @@
-export type ExtensionProfile = {
-  legalName: string;
-  email: string;
-  phone: string;
-  linkedIn: string;
-  location: string;
-  verifiedAt: string;
-};
+import type { ExtensionProfile } from "./profile-storage";
 
 export type FieldMatch = {
   element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
