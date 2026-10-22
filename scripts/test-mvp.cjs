@@ -6,6 +6,7 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/api/jobs/discover?*', route => route.fulfill({ json: { jobs: [], errors: [], total: 0, sources: [], cachedUntil: new Date(Date.now() + 60000).toISOString() } }));
     await page.goto(process.env.APP_URL || 'http://localhost:3000');
     const nav = name => page.getByRole('button', { name, exact: true }).click();
 
@@ -21,6 +22,7 @@ async function main() {
     await expect(page.getByText('NOT VERIFIED', { exact: true })).toBeVisible();
     await page.reload(); await nav('Application profile');
     await expect(page.getByLabel('Legal name', { exact: true })).toHaveValue('MVP Tester');
+    await page.getByRole('button', { name: 'Confirm authorization answers' }).click();
     console.log('PASS profile validation, persistence, authorization confirmation reset');
 
     await nav('Resume');
@@ -41,6 +43,7 @@ async function main() {
     }
 
     await nav('Jobs');
+    await page.getByText('Have a specific job link? Import it manually', { exact: true }).click();
     await page.getByRole('button', { name: 'Analyze jobs' }).click();
     await expect(page.getByText('Paste at least one job link.')).toBeVisible();
     await page.getByLabel('Job links').fill('https://example.com/job');
@@ -74,11 +77,12 @@ async function main() {
       await nav(name);
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Mobile overflow: ${name}`);
     }
+    page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Delete local data' }).click();
     await nav('Application profile');
     await expect(page.getByLabel('Legal name', { exact: true })).toHaveValue('');
     await nav('Applications'); await expect(page.getByText('Your queue is empty')).toBeVisible();
-    await page.reload(); await nav('Jobs'); await expect(page.getByText('No jobs analyzed yet')).toBeVisible();
+    await page.reload(); await nav('Jobs'); await expect(page.getByText('No matching jobs yet')).toBeVisible();
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('PASS mobile navigation, local deletion, no browser exceptions');
   } finally {

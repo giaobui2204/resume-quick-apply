@@ -170,3 +170,49 @@ blockquote { grid-column: 1 / -1; border-left: 3px solid var(--lime); margin: 3p
 .job-evidence { grid-column: 1 / -1; font-size: 13px; }
 .job-evidence summary { cursor: pointer; color: var(--green); }
 fieldset { min-width: 0; border: 1px solid var(--line); padding: 16px; margin: 18px 0; }
+
+.flow-header { display: flex; flex-wrap: wrap; gap: 12px 22px; max-width: 1280px; margin: 28px auto -22px; padding: 0 5vw; }
+.flow-step { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+.flow-step b { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; }
+.flow-step.current { color: var(--green); font-weight: 700; }
+.flow-step.current b { background: var(--lime); border-color: var(--lime); }
+.step-navigation { display: flex; align-items: center; justify-content: space-between; gap: 18px; max-width: 1152px; margin: -35px auto 45px; padding: 24px 5vw 0; border-top: 1px solid var(--line); }
+.step-navigation > div { text-align: right; }
+.step-navigation small { display: block; margin-top: 10px; color: var(--muted); font-size: 11px; }
+.step-navigation .muted { margin-top: 0; max-width: 390px; }
+.resume-library { margin-bottom: 22px; }
+.resume-row { display: flex; align-items: center; gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); }
+.resume-select { flex: 1; min-width: 0; border: 1px solid transparent; background: transparent; text-align: left; padding: 10px; cursor: pointer; border-radius: 4px; }
+.resume-select.selected { background: #edf2e4; border-color: #cddabb; }
+.resume-select strong, .resume-select small { display: block; overflow-wrap: anywhere; }
+.resume-select small { color: var(--muted); margin-top: 5px; font-size: 10px; }
+.resume-row .text-button { margin: 0; font-size: 11px; }
+.delete-link { color: #ad4936; }
+.discovery-filters { display: grid; grid-template-columns: 1.3fr 1.2fr 1fr; gap: 14px; }
+.discovery-filters .field { margin-bottom: 0; }
+.discovery-actions { display: flex; align-items: center; gap: 18px; }
+.discovery-actions .primary { margin-top: 0; }
+.discovery-panel .discovery-actions { margin-top: 20px; }
+.manual-import { margin: 22px 0; border: 1px solid var(--line); background: white; }
+.manual-import summary { cursor: pointer; padding: 18px; font-weight: 600; font-size: 13px; color: var(--green); }
+.manual-import .url-box { margin: 0; }
+button:disabled { cursor: not-allowed; }
+@media (max-width: 600px) {
+  .flow-header { padding: 0 20px; gap: 10px 15px; margin-top: 22px; }
+  .flow-step { font-size: 10px; }
+  .step-navigation { margin: -25px 20px 30px; padding: 20px 0 0; align-items: stretch; flex-direction: column-reverse; }
+  .step-navigation > div { text-align: left; }
+  .step-navigation button { width: 100%; }
+  .discovery-filters { grid-template-columns: 1fr; }
+  .discovery-actions { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .panel { padding: 20px; }
+  .panel-heading { gap: 12px; flex-wrap: wrap; }
+  .resume-row { flex-wrap: wrap; gap: 10px; }
+  .resume-select { flex-basis: 100%; }
+}
+.resume-context { max-width: 1280px; margin: 40px auto -24px; padding: 0 5vw; display: flex; gap: 12px; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--muted); }
+.resume-context strong { overflow-wrap: anywhere; }
+.resume-context .text-button { margin: 0; font-size: 11px; flex-shrink: 0; }
+@media (max-width: 600px) { .resume-context { padding: 0 20px; margin-top: 38px; } }
+
+.profile-editing { border: 0; padding: 0; margin: 0; min-width: 0; }

@@ -1,4 +1,5 @@
 import { assessSponsorship, normalizeJobUrl } from "@/lib/job-intelligence";
+import { postingText } from "@/lib/job-text";
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -21,7 +22,7 @@ async function importJob(raw: string) {
   const response = await fetch(canonicalUrl, { headers: { "user-agent": "ApplyPilot/0.1 job preview" }, redirect: "error", signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`posting returned ${response.status}`);
   const html = await response.text();
-  const text = cleanHtml(html);
+  const text = postingText(html);
   const title = extract(html, /<title[^>]*>(.*?)<\/title>/is) || "Untitled position";
   const company = pathCompany(url);
   return {
@@ -31,7 +32,7 @@ async function importJob(raw: string) {
     canonicalUrl,
     applyUrl: canonicalUrl,
     company,
-    title: decode(title).replace(/\s+\|\s+.*$/, "").trim(),
+    title: postingText(title).replace(/\s+\|\s+.*$/, "").trim(),
     location: "",
     description: text.slice(0, 50000),
     capturedAt: new Date().toISOString(),
@@ -41,5 +42,3 @@ async function importJob(raw: string) {
 
 function pathCompany(url: URL) { return url.pathname.split("/").filter(Boolean)[0]?.replaceAll("-", " ") || "Employer"; }
 function extract(value: string, pattern: RegExp) { return value.match(pattern)?.[1]?.trim() ?? ""; }
-function cleanHtml(html: string) { return decode(html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).trim(); }
-function decode(value: string) { return value.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", "\"").replaceAll("&#39;", "'"); }

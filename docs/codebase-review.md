@@ -1,5 +1,7 @@
 # ApplyPilot codebase review
 
+> Follow-up: the guided flow, IndexedDB multi-resume library, and public-feed discovery were implemented after this baseline review. See [MVP v2 delivery and validation](mvp-v2-plan.md) for current behavior and remaining boundaries.
+
 ## 1. Executive Summary
 
 The repository is a small local MVP with useful foundations: strict TypeScript, shared runtime schemas, explicit authorization confirmation, and an extension that leaves final submission to the user. The review found and fixed concrete failures in resume extraction, contact readiness, persisted-data validation, job deduplication, sequential queue handling, extension bundling, and contact-field matching. The largest remaining risks are stale extension state, misleading persistence/provider assumptions, whole-page job scraping, and public-deployment security gaps; the Supabase schema is scaffold rather than an integrated persistence layer. The dominant maintainability issue is concentration of UI, persistence, and workflow rules in one dashboard file, alongside separate schema/profile contracts. This review covers every source, test, configuration, migration, and documentation area; production readiness and real hosted-form extension behavior are not implied by passing local tests.

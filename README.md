@@ -12,7 +12,17 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Without hosted credentials, the web app uses browser-local storage and every profile field remains manually editable.
+Open `http://localhost:3000`. The runnable MVP stores resume profiles in IndexedDB and other workspace data in browser-local storage. Supabase is not connected yet. Every profile field remains manually editable.
+
+## Guided workflow and resume library
+
+Continue with the Next and Back buttons through Resume → Review profile → Discover jobs → Applications. The sidebar remains available for revisiting stages. You can upload several resume variants or create a blank one, select the active version, rename it, and delete it. Each version keeps its own extracted profile; queued applications keep the resume ID/name chosen when queued.
+
+The library reads lightweight metadata and loads only the selected profile. Profiles are stored as separate IndexedDB records; original PDFs/DOCX files are not retained. Upload bytes are hashed before extraction, so re-uploading an already saved document selects the existing record without calling AI again. Legacy single-profile data migrates on first use. This is single-browser storage, not cross-device cloud sync.
+
+## Automatic job discovery
+
+Opening Jobs automatically loads public vacancies from Anthropic and Figma (Greenhouse) and Palantir (Lever). Filter by title/company keywords, location and ATS source. Search returns up to 30 jobs by default, with a matching total; a five-minute per-board server cache and in-flight request sharing limit repeated upstream calls. Sources are fixed and bounded; failed boards are reported while successful boards remain usable. This is refresh-on-open/search, not an unattended background crawler or internet-wide search. Manual supported job-link import remains under its own expandable section.
 
 ## Free local AI with Ollama
 
@@ -53,7 +63,7 @@ The extension requests access only to Greenhouse and Lever. Open its popup, save
 
 ## Production setup
 
-1. Create a Supabase project and apply `supabase/migrations/0001_initial.sql`.
+1. Create a Supabase project and apply the migrations in `supabase/migrations` in order. The second migration adds multi-resume indexes, live-upload deduplication and an application/resume owner guard. These migrations have not been executed against a hosted database by the local checks.
 2. Create a private `resumes` storage bucket.
 3. Configure the values in `.env.example`. Use a server-accessible AI provider in hosted deployments; `127.0.0.1` refers to the deployment server, not the end user’s computer.
 4. Replace the browser-local repository with authenticated Supabase queries.
@@ -72,6 +82,8 @@ See [docs/acceptance.md](docs/acceptance.md) for the manual checkpoint script.
 
 ## Validation
 
-Run `npm test` and `npm run typecheck`. With the dev server running and Google Chrome installed, run `npm run test:e2e` for isolated browser checks. Optionally set `RESUME_PATH` to a local PDF/DOCX path to include real extraction through the configured provider; the default local Ollama setup avoids hosted AI calls. No application is submitted by this suite.
+Run `npm test` and `npm run typecheck`. With the dev server running and Google Chrome installed, run `npm run test:e2e` for existing browser regression checks and `npm run test:e2e:guided` for Next-step navigation, multiple resumes, upload deduplication, migration, job discovery fixtures, mobile layouts, and deletion. Optionally set `RESUME_PATH` to a local PDF/DOCX path to include real extraction through the configured provider; the default local Ollama setup avoids hosted AI calls. No application is submitted by this suite.
 
 See [the codebase review](docs/codebase-review.md) for prioritized findings, completed fixes, and remaining production blockers.
+
+The [MVP v2 plan](docs/mvp-v2-plan.md) records acceptance criteria and the user-supplied PM/engineering prompt guidance used for this iteration.
