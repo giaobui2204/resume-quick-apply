@@ -90,6 +90,14 @@ export const SponsorshipAssessmentSchema = z.object({
 
 export const AtsSchema = z.enum(["greenhouse", "lever"]);
 
+export const JobClassificationSchema = z.object({
+  experience: z.enum(["intern", "entry", "mid", "senior", "lead", "management", "unknown"]),
+  workMode: z.enum(["remote", "hybrid", "onsite", "unknown"]),
+  employment: z.enum(["full_time", "part_time", "contract", "internship", "unknown"]),
+  evidence: z.object({ experience: z.array(z.string()), workMode: z.array(z.string()), employment: z.array(z.string()) })
+});
+export type JobClassification = z.infer<typeof JobClassificationSchema>;
+
 export const JobSnapshotSchema = z.object({
   id: z.string(),
   ats: AtsSchema,
@@ -101,7 +109,8 @@ export const JobSnapshotSchema = z.object({
   location: z.string().default(""),
   description: z.string(),
   capturedAt: z.string().datetime(),
-  sponsorship: SponsorshipAssessmentSchema.optional()
+  sponsorship: SponsorshipAssessmentSchema.optional(),
+  classification: JobClassificationSchema.optional()
 });
 
 export const ApplicationStatusSchema = z.enum([

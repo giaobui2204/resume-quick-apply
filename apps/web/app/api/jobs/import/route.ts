@@ -1,4 +1,5 @@
 import { assessSponsorship, normalizeJobUrl } from "@/lib/job-intelligence";
+import { classifyJob } from "@/lib/job-classification";
 import { postingText } from "@/lib/job-text";
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "node:crypto";
@@ -34,6 +35,7 @@ async function importJob(raw: string) {
     company,
     title: postingText(title).replace(/\s+\|\s+.*$/, "").trim(),
     location: "",
+    classification: classifyJob(postingText(title).replace(/\s+\|\s+.*$/, "").trim(), ""),
     description: text.slice(0, 50000),
     capturedAt: new Date().toISOString(),
     sponsorship: assessSponsorship(text)

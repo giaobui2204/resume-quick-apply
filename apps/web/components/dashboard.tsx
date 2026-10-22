@@ -14,7 +14,7 @@ import { loadResumeLibrary, addResume, updateResume, selectResume, deleteResume,
 
 import { StepNavigation, flow, type View } from "./step-navigation";
 import { mergeJobs } from "@/lib/job-workspace";
-import { JobDiscoveryPanel, type DiscoveryCriteria } from "./job-discovery-panel";
+import { JobDiscoveryPanel } from "./job-discovery-panel";
 import { ResumeLibraryPanel } from "./resume-library-panel";
 const validContact = (profile: ResumeExtraction) => Boolean(profile.contact.legalName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.contact.email));
 const profileKey = "applypilot.profile";
@@ -309,10 +309,10 @@ function JobsView({ jobs, applications, onJobs, onApplications, resumeId, resume
   onJobs: (jobs: JobSnapshot[]) => void; onApplications: (applications: Application[]) => void;
 }) {
   const [discovering, setDiscovering] = useState(false);
+  const [importedCount, setImportedCount] = useState<number | null>(null);
   const [visibleUrls, setVisibleUrls] = useState<Set<string> | null>(null);
   const importController = useRef<AbortController | null>(null);
   useEffect(() => () => importController.current?.abort(), []);
-  const [criteria, setCriteria] = useState<DiscoveryCriteria>({ query: "", location: "", source: "all" });
   const [urls, setUrls] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -331,7 +331,7 @@ function JobsView({ jobs, applications, onJobs, onApplications, resumeId, resume
       if (controller.signal.aborted) return;
       onJobs(mergeJobs(jobs, body.jobs));
       setVisibleUrls(new Set(body.jobs.map((job: JobSnapshot) => job.canonicalUrl)));
-      setCriteria({ query: "", location: "", source: "all" });
+      setImportedCount(new Set(body.jobs.map((job: JobSnapshot) => job.canonicalUrl)).size);
       setUrls("");
       if (body.errors.length) setError(body.errors.join(" · "));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Import failed"); }
@@ -345,23 +345,18 @@ function JobsView({ jobs, applications, onJobs, onApplications, resumeId, resume
     onApplications([...applications, { id: crypto.randomUUID(), job, resumeId, resumeName, status: "queued", queuePosition: applications.length, blockedReason: null, fields: [], createdAt: now, updatedAt: now }]);
   }
 
-  const visibleJobs = jobs.filter((job) => {
-    if (visibleUrls && !visibleUrls.has(job.canonicalUrl)) return false;
-    const terms = criteria.query.toLowerCase().split(/\s+/).filter(Boolean);
-    const text = `${job.title} ${job.company}`.toLowerCase();
-    return terms.every((term) => text.includes(term)) && (!criteria.location.trim() || job.location.toLowerCase().includes(criteria.location.toLowerCase().trim())) && (criteria.source === "all" || job.ats === criteria.source);
-  });
+  const jobsByUrl = new Map(jobs.map((job) => [job.canonicalUrl, job]));
+  const visibleJobs = visibleUrls
+    ? [...visibleUrls].flatMap((url) => { const job = jobsByUrl.get(url); return job ? [job] : []; })
+    : jobs;
 
-  return <section className="page">
-    <PageTitle eyebrow="STEP 3 · JOB INTELLIGENCE" title="Read sponsorship language before you apply" text="Find openings across supported company boards, then review the sponsorship evidence before adding a job to your queue." />
-    <JobDiscoveryPanel disabled={busy} onBusy={setDiscovering} onError={setError} onResults={(found, filters) => {
-      setCriteria(filters);
-      const known = new Set(jobs.map((job) => job.canonicalUrl));
-      const additions = new Set(found.filter((job) => !known.has(job.canonicalUrl)).map((job) => job.canonicalUrl));
-      setVisibleUrls(new Set(found.map((job) => job.canonicalUrl)));
+  return <section className="page jobs-page">
+    <div className="jobs-masthead"><p className="eyebrow">STEP 3 / YOUR NEXT CHAPTER</p><h1>Find your next <em>move.</em></h1><p>Real openings. Clear sponsorship evidence. A search built around you.</p></div>
+    <JobDiscoveryPanel importedCount={importedCount} disabled={busy} onBusy={setDiscovering} onError={setError} onResults={(found, append) => {
+      setImportedCount(null);
+      setVisibleUrls((previous) => new Set([...(append && previous ? previous : []), ...found.map((job) => job.canonicalUrl)]));
       onJobs(mergeJobs(jobs, found));
-      return additions.size;
-    }} />
+    }}>
     <details className="manual-import"><summary>Have a specific job link? Import it manually</summary>
     <div className="url-box">
       <textarea aria-label="Job links" rows={4} value={urls} onChange={(e) => setUrls(e.target.value)} placeholder={"Paste up to 25 job links, one per line\nhttps://boards.greenhouse.io/…\nhttps://jobs.lever.co/…"} />
@@ -370,10 +365,11 @@ function JobsView({ jobs, applications, onJobs, onApplications, resumeId, resume
     </details>
     {error && <div className="notice warning" role="alert">{error}</div>}
     <div className="job-list">
-      {visibleJobs.length === 0 && !discovering && <Empty title="No matching jobs yet" text="Search the job boards above or import a specific posting." />}
+      {visibleJobs.length === 0 && !discovering && <Empty title={error ? "No results could be shown" : "No matches for these filters"} text={error ? "Check the source error above and try again." : "Try a broader role, Any level, or Not specified. You can also import a specific posting."} />}
       {discovering && <p role="status" className="muted">Searching supported boards…</p>}
       {visibleJobs.map((job) => <JobCard key={job.id} job={job} queued={applications.some((a) => a.job.canonicalUrl === job.canonicalUrl)} onQueue={() => queue(job)} />)}
     </div>
+    </JobDiscoveryPanel>
   </section>;
 }
 
@@ -383,8 +379,8 @@ function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; 
     ["STEM OPT", job.sponsorship.stemOpt.label], ["H-1B", job.sponsorship.h1bFuture.label]
   ] : [];
   return <article className="job-card">
-    <div className="job-main"><span className="ats">{job.ats}</span><h3>{job.title}</h3><p>{job.company} · {job.location || "Location not listed"}</p></div>
-    <div className="sponsor-labels">{labels.map(([name, label]) => <span key={name} className={`sponsor ${label}`}>{name}: {label.replaceAll("_", " ")}</span>)}</div>
+    <div className="job-main"><div className="job-card-kicker"><span className="ats">{job.ats}</span><span className="experience-badge">{({ intern: "Internship", entry: "Entry / new grad", mid: "Mid level", senior: "Senior", lead: "Staff / lead", management: "Management", unknown: "Level not specified" })[job.classification?.experience ?? "unknown"]}</span></div><h3>{job.title}</h3><p>{job.company} · {job.location || "Location not listed"}</p><div className="job-meta"><span>{({ remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Work mode not specified" })[job.classification?.workMode ?? "unknown"]}</span><span>{({ full_time: "Full-time", part_time: "Part-time", contract: "Contract", internship: "Internship", unknown: "Employment not specified" })[job.classification?.employment ?? "unknown"]}</span></div>{job.classification && <details className="classification-evidence"><summary>How this role is classified</summary>{Object.entries(job.classification.evidence).map(([key, evidence]) => <p key={key}><strong>{key === "workMode" ? "Work mode" : key === "experience" ? "Level" : "Employment"}:</strong> {evidence.length ? evidence.join(" · ") : "Not specified by a clear employer signal."}</p>)}</details>}</div>
+    {labels.length > 0 && <div className="sponsor-labels">{labels.map(([name, label]) => <span key={name} className={`sponsor ${label}`}>{name}: {label.replaceAll("_", " ")}</span>)}</div>}
     {job.sponsorship && <details className="job-evidence"><summary>Review sponsorship evidence</summary>
       {([ ["CPT", job.sponsorship.cpt], ["OPT", job.sponsorship.opt], ["STEM OPT", job.sponsorship.stemOpt], ["H-1B", job.sponsorship.h1bFuture] ] as const).map(([name, signal]) => <div key={name}>
         <strong>{name}</strong><p className="muted">{signal.explanation}</p>

@@ -82,7 +82,7 @@ async function main() {
     await nav('Application profile');
     await expect(page.getByLabel('Legal name', { exact: true })).toHaveValue('');
     await nav('Applications'); await expect(page.getByText('Your queue is empty')).toBeVisible();
-    await page.reload(); await nav('Jobs'); await expect(page.getByText('No matching jobs yet')).toBeVisible();
+    await page.reload(); await nav('Jobs'); await expect(page.getByText('No matches for these filters')).toBeVisible();
     if (errors.length) throw new Error(errors.join('\n'));
     console.log('PASS mobile navigation, local deletion, no browser exceptions');
   } finally {
