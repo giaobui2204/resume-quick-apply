@@ -7,7 +7,7 @@ It intentionally does **not** invent answers, bypass CAPTCHAs, fill protected de
 ## Run locally
 
 ```bash
-cp .env.example .env.local
+cp .env.example apps/web/.env.local
 npm install
 npm run dev
 ```
@@ -23,7 +23,7 @@ ollama pull qwen3:4b
 ollama serve
 ```
 
-Copy `.env.example` to `.env.local`. The defaults use Ollama at `http://127.0.0.1:11434`, so no API key is required:
+Copy `.env.example` to `apps/web/.env.local`. The defaults use Ollama at `http://127.0.0.1:11434`, so no API key is required:
 
 ```env
 AI_PROVIDER=ollama
@@ -69,3 +69,9 @@ The extension requests access only to Greenhouse and Lever. Open its popup, save
 - MVP 5: persistent sequential queue and blocked handoff.
 
 See [docs/acceptance.md](docs/acceptance.md) for the manual checkpoint script.
+
+## Validation
+
+Run `npm test` and `npm run typecheck`. With the dev server running and Google Chrome installed, run `npm run test:e2e` for isolated browser checks. Optionally set `RESUME_PATH` to a local PDF/DOCX path to include real extraction through the configured provider; the default local Ollama setup avoids hosted AI calls. No application is submitted by this suite.
+
+See [the codebase review](docs/codebase-review.md) for prioritized findings, completed fixes, and remaining production blockers.

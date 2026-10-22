@@ -1,9 +1,9 @@
-import { ResumeExtractionSchema } from "@quick-apply/shared";
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { extractWithOllama } from "@/lib/ollama";
 import { extractResumeText } from "@/lib/resume-text";
 import { resumeJsonSchema } from "@/lib/resume-schema";
+import { parseResumeExtraction } from "@/lib/parse-resume";
 
 export const runtime = "nodejs";
 
@@ -54,5 +54,5 @@ async function extractWithOpenAI(file: File) {
       }
     }
   });
-  return ResumeExtractionSchema.parse(JSON.parse(response.output_text));
+  return parseResumeExtraction(JSON.parse(response.output_text));
 }
