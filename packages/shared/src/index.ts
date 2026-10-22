@@ -133,6 +133,8 @@ export const ApplicationSchema = z.object({
   job: JobSnapshotSchema,
   status: ApplicationStatusSchema,
   queuePosition: z.number().int().nonnegative(),
+  resumeId: z.string().nullable().optional(),
+  resumeName: z.string().optional(),
   blockedReason: BlockedReasonSchema.nullable(),
   fields: z.array(ApplicationFieldSchema).default([]),
   createdAt: z.string().datetime(),
