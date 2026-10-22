@@ -1,5 +1,6 @@
-import { ResumeExtractionSchema, type ResumeExtraction } from "@quick-apply/shared";
+import { type ResumeExtraction } from "@quick-apply/shared";
 import { resumeJsonSchema } from "./resume-schema";
+import { parseResumeExtraction } from "./parse-resume";
 
 type OllamaChatResponse = {
   message?: { content?: string };
@@ -50,5 +51,5 @@ export async function extractWithOllama(resumeText: string): Promise<ResumeExtra
   }
 
   if (!result.message?.content) throw new Error("Ollama returned an empty response.");
-  return ResumeExtractionSchema.parse(JSON.parse(result.message.content));
+  return parseResumeExtraction(JSON.parse(result.message.content));
 }

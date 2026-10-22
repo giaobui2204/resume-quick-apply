@@ -2,17 +2,26 @@
   "name": "resume-quick-apply",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev -w @quick-apply/web",
     "dev:extension": "npm run dev -w @quick-apply/extension",
     "build": "npm run build -w @quick-apply/shared && npm run build -w @quick-apply/web && npm run build -w @quick-apply/extension",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "node scripts/test-mvp.cjs"
   },
   "overrides": {
     "postcss": "^8.5.18",
     "sharp": "^0.35.0"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
 }

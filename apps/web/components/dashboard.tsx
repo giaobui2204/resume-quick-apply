@@ -6,11 +6,12 @@ import type {
   ResumeExtraction,
   WorkAuthorization
 } from "@quick-apply/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { emptyAuthorization, emptyResume } from "@/lib/demo-data";
-import { readLocal, writeLocal } from "@/lib/storage";
+import { browserDraftResumeSchema, storedAuthorizationSchema, storedJobsSchema, storedApplicationsSchema, readLocal, writeLocal } from "@/lib/storage";
 
 type View = "overview" | "resume" | "profile" | "jobs" | "applications" | "settings";
+const validContact = (profile: ResumeExtraction) => Boolean(profile.contact.legalName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.contact.email));
 const profileKey = "applypilot.profile";
 const authorizationKey = "applypilot.authorization";
 const jobsKey = "applypilot.jobs";
@@ -23,39 +24,42 @@ export function Dashboard() {
   const [jobs, setJobs] = useState<JobSnapshot[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [ready, setReady] = useState(false);
+  const [storageError, setStorageError] = useState("");
+
+  function persist<T>(key: string, value: T) {
+    if (!writeLocal(key, value)) setStorageError("Changes are only saved for this session. Browser storage is unavailable or full; keep this tab open and enable local storage before refreshing.");
+  }
 
   useEffect(() => {
-    setProfile(readLocal(profileKey, emptyResume));
-    setAuthorization(readLocal(authorizationKey, emptyAuthorization));
-    setJobs(readLocal(jobsKey, []));
-    setApplications(readLocal(applicationsKey, []));
+    setProfile(readLocal(profileKey, emptyResume, browserDraftResumeSchema));
+    setAuthorization(readLocal(authorizationKey, emptyAuthorization, storedAuthorizationSchema));
+    setJobs(readLocal<JobSnapshot[]>(jobsKey, [], storedJobsSchema));
+    setApplications(readLocal<Application[]>(applicationsKey, [], storedApplicationsSchema));
     setReady(true);
   }, []);
 
   function saveProfile(next: ResumeExtraction) {
     setProfile(next);
-    writeLocal(profileKey, next);
+    persist(profileKey, next);
   }
 
   function saveAuthorization(next: WorkAuthorization) {
     setAuthorization(next);
-    writeLocal(authorizationKey, next);
+    persist(authorizationKey, next);
   }
 
   function saveJobs(next: JobSnapshot[]) {
     setJobs(next);
-    writeLocal(jobsKey, next);
+    persist(jobsKey, next);
   }
 
   function saveApplications(next: Application[]) {
     setApplications(next);
-    writeLocal(applicationsKey, next);
+    persist(applicationsKey, next);
   }
 
-  const profileReady = Boolean(profile.contact.legalName && profile.contact.email);
-  const activeCount = applications.filter((item) =>
-    !["submitted", "failed", "skipped", "expired"].includes(item.status)
-  ).length;
+  const profileReady = validContact(profile);
+
 
   if (!ready) return <main className="loading">Preparing your workspace…</main>;
 
@@ -75,7 +79,7 @@ export function Dashboard() {
             ["applications", "Applications"],
             ["settings", "Settings"]
           ] as [View, string][]).map(([key, label]) => (
-            <button className={view === key ? "nav-item active" : "nav-item"} key={key} onClick={() => setView(key)}>
+            <button aria-current={view === key ? "page" : undefined} className={view === key ? "nav-item active" : "nav-item"} key={key} onClick={() => setView(key)}>
               <span className="nav-dot" />{label}
             </button>
           ))}
@@ -91,6 +95,7 @@ export function Dashboard() {
           <div><p className="eyebrow">INTERNATIONAL STUDENT CAREER TOOL</p></div>
           <div className="status-pill"><span /> Local preview</div>
         </header>
+        {storageError && <div className="notice warning" role="alert">{storageError}</div>}
         {view === "overview" && <Overview profileReady={profileReady} jobs={jobs} applications={applications} navigate={setView} />}
         {view === "resume" && <ResumeView profile={profile} onSave={saveProfile} />}
         {view === "profile" && <ProfileView profile={profile} authorization={authorization} onProfile={saveProfile} onAuthorization={saveAuthorization} />}
@@ -148,9 +153,13 @@ function Step({ number, title, text, action, onClick, done }: { number: string; 
 function ResumeView({ profile, onSave }: { profile: ResumeExtraction; onSave: (profile: ResumeExtraction) => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const uploading = useRef(false);
 
   async function upload(file?: File) {
-    if (!file) return;
+    if (!file || uploading.current) return;
+    if (file.size > 10 * 1024 * 1024) { setMessage("Resume must be 10 MB or smaller."); return; }
+    if (!/\.(pdf|docx)$/i.test(file.name)) { setMessage("Only PDF and DOCX resumes are supported."); return; }
+    uploading.current = true;
     setBusy(true); setMessage("");
     const form = new FormData(); form.append("resume", file);
     try {
@@ -161,13 +170,13 @@ function ResumeView({ profile, onSave }: { profile: ResumeExtraction; onSave: (p
       setMessage("Resume extracted. Review every field before using it.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed");
-    } finally { setBusy(false); }
+    } finally { uploading.current = false; setBusy(false); }
   }
 
   return <section className="page narrow">
     <PageTitle eyebrow="MVP 1 · RESUME" title="Turn your resume into verified facts" text="PDF and DOCX up to 10 MB. Extracted details are never trusted until you review them." />
-    <label className="upload-zone">
-      <input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(e) => upload(e.target.files?.[0])} />
+    <label className="upload-zone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void upload(e.dataTransfer.files[0]); }} aria-busy={busy}>
+      <input type="file" aria-label="Choose a resume" disabled={busy} accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
       <span className="upload-icon">↥</span>
       <strong>{busy ? "Reading your resume…" : "Choose a resume"}</strong>
       <small>or drop PDF / DOCX here</small>
@@ -207,7 +216,7 @@ function ProfileEditor({ profile, onSave, compact = false }: { profile: ResumeEx
   const contact = profile.contact;
   const update = (key: keyof typeof contact, value: string) => onSave({ ...profile, contact: { ...contact, [key]: value } });
   return <div className="panel">
-    <div className="panel-heading"><div><p className="eyebrow">PERSONAL INFORMATION</p><h3>Contact details</h3></div><span className={contact.legalName && contact.email ? "verified" : "unverified"}>{contact.legalName && contact.email ? "READY" : "INCOMPLETE"}</span></div>
+    <div className="panel-heading"><div><p className="eyebrow">PERSONAL INFORMATION</p><h3>Contact details</h3></div><span className={validContact(profile) ? "verified" : "unverified"}>{validContact(profile) ? "READY" : "INCOMPLETE"}</span></div>
     <div className="form-grid">
       <Field label="Legal name"><input value={contact.legalName} onChange={(e) => update("legalName", e.target.value)} placeholder="Your full legal name" /></Field>
       <Field label="Preferred name"><input value={contact.preferredName} onChange={(e) => update("preferredName", e.target.value)} placeholder="What should employers call you?" /></Field>
@@ -215,10 +224,29 @@ function ProfileEditor({ profile, onSave, compact = false }: { profile: ResumeEx
       <Field label="Phone"><input value={contact.phone} onChange={(e) => update("phone", e.target.value)} placeholder="+1 555 123 4567" /></Field>
       <Field label="Location"><input value={contact.location} onChange={(e) => update("location", e.target.value)} placeholder="San Francisco, CA" /></Field>
       <Field label="LinkedIn"><input value={contact.linkedIn} onChange={(e) => update("linkedIn", e.target.value)} placeholder="https://linkedin.com/in/…" /></Field>
+      <Field label="GitHub"><input value={contact.github} onChange={(e) => update("github", e.target.value)} /></Field>
+      <Field label="Portfolio"><input value={contact.portfolio} onChange={(e) => update("portfolio", e.target.value)} /></Field>
     </div>
     {!compact && <>
       <Field label="Professional summary"><textarea rows={4} value={profile.summary} onChange={(e) => onSave({ ...profile, summary: e.target.value })} /></Field>
       <Field label="Skills (comma separated)"><input value={profile.skills.join(", ")} onChange={(e) => onSave({ ...profile, skills: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} /></Field>
+      <Field label="Certifications (one per line)"><textarea value={profile.certifications.join("\n")} onChange={(e) => onSave({ ...profile, certifications: e.target.value.split("\n") })} /></Field>
+      {(["experiences", "educations", "projects"] as const).map((section) => <section key={section}>
+        <h3>{section === "experiences" ? "Experience" : section === "educations" ? "Education" : "Projects"}</h3>
+        {profile[section].length === 0 && <p className="muted">No entries extracted.</p>}
+        {profile[section].map((entry, index) => <fieldset key={entry.id}>
+          <legend>{section === "experiences" ? "Experience" : section === "educations" ? "Education" : "Project"} {index + 1}</legend>
+          {Object.entries(entry).filter(([key]) => key !== "id").map(([key, value]) => {
+            const label = key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+            const change = (next: string | boolean | string[]) => onSave({ ...profile, [section]: profile[section].map((item, i) => i === index ? { ...item, [key]: next } : item) });
+            if (typeof value === "boolean") return <Check key={key} label={label} checked={value} onChange={change} />;
+            return <Field key={key} label={Array.isArray(value) ? `${label} (one per line)` : label}>
+              {Array.isArray(value) ? <textarea value={value.join("\n")} onChange={(e) => change(e.target.value.split("\n"))} /> : <input value={value} onChange={(e) => change(e.target.value)} />}
+            </Field>;
+          })}
+        </fieldset>)}
+      </section>)}
+      {profile.warnings.length > 0 && <div className="notice warning" role="status">{profile.warnings.join(" · ")}</div>}
     </>}
   </div>;
 }
@@ -232,15 +260,16 @@ function JobsView({ jobs, applications, onJobs, onApplications }: {
   const [error, setError] = useState("");
 
   async function analyze() {
-    const list = urls.split(/\s+/).filter(Boolean).slice(0, 25);
-    if (!list.length) return;
+    const list = [...new Set(urls.split(/\s+/).filter(Boolean))];
+    if (!list.length) { setError("Paste at least one job link."); return; }
+    if (list.length > 25) { setError("Analyze up to 25 links at a time."); return; }
     setBusy(true); setError("");
     try {
       const response = await fetch("/api/jobs/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ urls: list }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not import jobs");
       const known = new Set(jobs.map((job) => job.canonicalUrl));
-      onJobs([...jobs, ...body.jobs.filter((job: JobSnapshot) => !known.has(job.canonicalUrl))]);
+      onJobs([...jobs, ...body.jobs.filter((job: JobSnapshot) => !known.has(job.canonicalUrl) && Boolean(known.add(job.canonicalUrl)))]);
       setUrls("");
       if (body.errors.length) setError(body.errors.join(" · "));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Import failed"); }
@@ -249,6 +278,7 @@ function JobsView({ jobs, applications, onJobs, onApplications }: {
 
   function queue(job: JobSnapshot) {
     if (applications.some((item) => item.job.canonicalUrl === job.canonicalUrl)) return;
+    if (applications.filter((item) => !["submitted", "failed", "skipped", "expired"].includes(item.status)).length >= 25) { setError("The queue holds up to 25 active applications."); return; }
     const now = new Date().toISOString();
     onApplications([...applications, { id: crypto.randomUUID(), job, status: "queued", queuePosition: applications.length, blockedReason: null, fields: [], createdAt: now, updatedAt: now }]);
   }
@@ -256,7 +286,7 @@ function JobsView({ jobs, applications, onJobs, onApplications }: {
   return <section className="page">
     <PageTitle eyebrow="MVP 3 · JOB INTELLIGENCE" title="Read sponsorship language before you apply" text="Add Greenhouse or Lever links. Every conclusion shows evidence—or honestly says unknown." />
     <div className="url-box">
-      <textarea rows={4} value={urls} onChange={(e) => setUrls(e.target.value)} placeholder={"Paste up to 25 job links, one per line\nhttps://boards.greenhouse.io/…\nhttps://jobs.lever.co/…"} />
+      <textarea aria-label="Job links" rows={4} value={urls} onChange={(e) => setUrls(e.target.value)} placeholder={"Paste up to 25 job links, one per line\nhttps://boards.greenhouse.io/…\nhttps://jobs.lever.co/…"} />
       <button className="primary" onClick={analyze} disabled={busy}>{busy ? "Analyzing…" : "Analyze jobs"} <span>→</span></button>
     </div>
     {error && <div className="notice warning">{error}</div>}
@@ -275,7 +305,12 @@ function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; 
   return <article className="job-card">
     <div className="job-main"><span className="ats">{job.ats}</span><h3>{job.title}</h3><p>{job.company} · {job.location || "Location not listed"}</p></div>
     <div className="sponsor-labels">{labels.map(([name, label]) => <span key={name} className={`sponsor ${label}`}>{name}: {label.replaceAll("_", " ")}</span>)}</div>
-    {job.sponsorship?.h1bFuture.evidence[0] && <blockquote>“{job.sponsorship.h1bFuture.evidence[0]}”</blockquote>}
+    {job.sponsorship && <details className="job-evidence"><summary>Review sponsorship evidence</summary>
+      {([ ["CPT", job.sponsorship.cpt], ["OPT", job.sponsorship.opt], ["STEM OPT", job.sponsorship.stemOpt], ["H-1B", job.sponsorship.h1bFuture] ] as const).map(([name, signal]) => <div key={name}>
+        <strong>{name}</strong><p className="muted">{signal.explanation}</p>
+        {signal.evidence.map((quote, index) => <blockquote key={index}>“{quote}”</blockquote>)}
+      </div>)}
+    </details>}
     <div className="job-actions"><a href={job.applyUrl} target="_blank" rel="noreferrer">View posting ↗</a><button className="primary small" onClick={onQueue} disabled={queued}>{queued ? "In queue" : "Add to queue"}</button></div>
   </article>;
 }
@@ -287,10 +322,15 @@ function ApplicationsView({ applications, onApplications }: { applications: Appl
     submitted: applications.filter((a) => a.status === "submitted").length,
     blocked: applications.filter((a) => a.status === "blocked").length
   }), [applications]);
-  const update = (id: string, status: Application["status"]) => onApplications(applications.map((item) => item.id === id ? { ...item, status, updatedAt: new Date().toISOString() } : item));
+  const active = applications.find((item) => ["analyzing", "ready", "filling", "review_required", "submitting", "submission_unknown"].includes(item.status));
+  const update = (id: string, status: Application["status"]) => {
+    if (status === "ready" && active) return;
+    onApplications(applications.map((item) => item.id === id ? { ...item, status, updatedAt: new Date().toISOString() } : item));
+  };
   return <section className="page">
-    <PageTitle eyebrow="MVP 5 · CONTROLLED QUEUE" title="One focused application at a time" text="The extension prepares each form. Unknown answers stop for review instead of being guessed." />
+    <PageTitle eyebrow="MVP 5 · CONTROLLED QUEUE" title="One focused application at a time" text="Prepare a job, open its form, and use the extension to fill verified contact fields. Record the outcome here after reviewing the form." />
     <div className="count-row">{Object.entries(counts).map(([label, count]) => <div className="count-card" key={label}><strong>{count}</strong><span>{label}</span></div>)}</div>
+    <p className="muted">Save your verified contact details in the extension popup first. This local preview does not automatically sync profiles or application outcomes with the extension.</p>
     <div className="queue">
       {applications.length === 0 && <Empty title="Your queue is empty" text="Analyze a job and add it to the queue." />}
       {applications.map((application, index) => <article className="queue-item" key={application.id}>
@@ -298,9 +338,14 @@ function ApplicationsView({ applications, onApplications }: { applications: Appl
         <div><h3>{application.job.title}</h3><p>{application.job.company} · {application.job.ats}</p></div>
         <span className={`state ${application.status}`}>{application.status.replaceAll("_", " ")}</span>
         <div className="queue-actions">
-          {application.status === "queued" && <button onClick={() => update(application.id, "ready")}>Prepare</button>}
+          {application.status === "queued" && <button disabled={Boolean(active)} onClick={() => update(application.id, "ready")}>Prepare</button>}
           {application.status === "ready" && <a href={application.job.applyUrl} target="_blank" rel="noreferrer">Open form ↗</a>}
-          <button className="ghost-danger" onClick={() => onApplications(applications.filter((a) => a.id !== application.id))}>Remove</button>
+          {application.status === "ready" && <>
+            <button onClick={() => update(application.id, "submitted")}>I submitted this application</button>
+            <button onClick={() => update(application.id, "blocked")}>Needs manual help</button>
+          </>}
+          {application.status === "blocked" && <button onClick={() => update(application.id, "queued")}>Retry</button>}
+          <button className="ghost-danger" onClick={() => onApplications(applications.filter((a) => a.id !== application.id).map((a, queuePosition) => ({ ...a, queuePosition })))}>Remove</button>
         </div>
       </article>)}
     </div>
