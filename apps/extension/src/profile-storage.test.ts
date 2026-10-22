@@ -41,7 +41,9 @@ describe("extension profile persistence", () => {
   function area(store: Record<string, unknown>) {
     return {
       get: vi.fn(async (key: string) => ({ [key]: store[key] })),
-      set: vi.fn(async (values: Record<string, unknown>) => { Object.assign(store, values); })
+      set: vi.fn(async (values: Record<string, unknown>) => {
+        Object.assign(store, values);
+      })
     };
   }
 });

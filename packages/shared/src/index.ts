@@ -44,12 +44,16 @@ export const ResumeExtractionSchema = z.object({
   summary: z.string().default(""),
   experiences: z.array(ExperienceSchema).default([]),
   educations: z.array(EducationSchema).default([]),
-  projects: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().default(""),
-    technologies: z.array(z.string()).default([])
-  })).default([]),
+  projects: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().default(""),
+        technologies: z.array(z.string()).default([])
+      })
+    )
+    .default([]),
   skills: z.array(z.string()).default([]),
   certifications: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([])
@@ -65,11 +69,7 @@ export const WorkAuthorizationSchema = z.object({
   confirmedAt: z.string().datetime().nullable()
 });
 
-export const SponsorshipLabelSchema = z.enum([
-  "likely_supported",
-  "likely_not_supported",
-  "unknown"
-]);
+export const SponsorshipLabelSchema = z.enum(["likely_supported", "likely_not_supported", "unknown"]);
 
 export const SponsorshipDimensionSchema = z.object({
   label: SponsorshipLabelSchema,
@@ -88,26 +88,33 @@ export const SponsorshipAssessmentSchema = z.object({
   model: z.string()
 });
 
-export const AtsSchema = z.enum(["greenhouse", "lever"]);
+export const AtsSchema = z.enum(["greenhouse", "lever", "ashby"]);
 
 export const JobClassificationSchema = z.object({
   experience: z.enum(["intern", "entry", "mid", "senior", "lead", "management", "unknown"]),
   workMode: z.enum(["remote", "hybrid", "onsite", "unknown"]),
   employment: z.enum(["full_time", "part_time", "contract", "internship", "unknown"]),
-  evidence: z.object({ experience: z.array(z.string()), workMode: z.array(z.string()), employment: z.array(z.string()) })
+  evidence: z.object({
+    experience: z.array(z.string()),
+    workMode: z.array(z.string()),
+    employment: z.array(z.string())
+  })
 });
 export type JobClassification = z.infer<typeof JobClassificationSchema>;
 
 // Source calendar date, independent of collection time or an assumed timezone.
-export const PostedDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
-  const timestamp = Date.parse(`${value}T00:00:00Z`);
-  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
-}, "Invalid calendar date");
+export const PostedDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const timestamp = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
+  }, "Invalid calendar date");
 
 export const JobSnapshotSchema = z.object({
   id: z.string(),
   ats: AtsSchema.nullable(),
-  provider: z.enum(["greenhouse", "lever", "remotive"]).optional(),
+  provider: z.enum(["greenhouse", "lever", "ashby", "remotive"]).optional(),
   sourceUrl: z.string().url().optional(),
   attribution: z.object({ label: z.string(), url: z.string().url() }).optional(),
   externalId: z.string(),
@@ -124,15 +131,29 @@ export const JobSnapshotSchema = z.object({
 });
 
 export const ApplicationStatusSchema = z.enum([
-  "queued", "analyzing", "ready", "filling", "review_required",
-  "submitting", "submitted", "submission_unknown", "blocked",
-  "failed", "skipped", "expired"
+  "queued",
+  "analyzing",
+  "ready",
+  "filling",
+  "review_required",
+  "submitting",
+  "submitted",
+  "submission_unknown",
+  "blocked",
+  "failed",
+  "skipped",
+  "expired"
 ]);
 
 export const BlockedReasonSchema = z.enum([
-  "captcha", "unsupported_component", "authentication_required",
-  "site_changed", "file_upload_failed", "job_mismatch",
-  "network_error", "unknown_submission"
+  "captcha",
+  "unsupported_component",
+  "authentication_required",
+  "site_changed",
+  "file_upload_failed",
+  "job_mismatch",
+  "network_error",
+  "unknown_submission"
 ]);
 
 export const ApplicationFieldSchema = z.object({

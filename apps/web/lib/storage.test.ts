@@ -10,7 +10,13 @@ function stored(value: string) {
 
 describe("browser persistence", () => {
   it("recovers from malformed JSON and incompatible stored shapes", () => {
-    for (const value of ["{", "null", "{}", '{"contact":null}', '{"schemaVersion":1,"contact":{"legalName":42}}']) {
+    for (const value of [
+      "{",
+      "null",
+      "{}",
+      '{"contact":null}',
+      '{"schemaVersion":1,"contact":{"legalName":42}}'
+    ]) {
       stored(value);
       expect(readLocal("profile", emptyResume, browserDraftResumeSchema)).toBe(emptyResume);
     }
@@ -19,7 +25,12 @@ describe("browser persistence", () => {
   });
 
   it("keeps incomplete contact drafts after reload and restores schema defaults", () => {
-    stored(JSON.stringify({ schemaVersion: 1, contact: { email: "unfinished@", linkedIn: "linkedin.com/in/draft" } }));
+    stored(
+      JSON.stringify({
+        schemaVersion: 1,
+        contact: { email: "unfinished@", linkedIn: "linkedin.com/in/draft" }
+      })
+    );
     const result = readLocal("profile", emptyResume, browserDraftResumeSchema);
     expect(result.contact.email).toBe("unfinished@");
     expect(result.contact.linkedIn).toBe("linkedin.com/in/draft");
@@ -28,12 +39,24 @@ describe("browser persistence", () => {
   });
 
   it("recovers when browser storage access is unavailable", () => {
-    vi.stubGlobal("window", { localStorage: { getItem() { throw new Error("Access denied"); } } });
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem() {
+          throw new Error("Access denied");
+        }
+      }
+    });
     expect(readLocal("profile", emptyResume, browserDraftResumeSchema)).toBe(emptyResume);
   });
 
   it("reports denied or quota-exceeded writes without throwing", () => {
-    vi.stubGlobal("window", { localStorage: { setItem() { throw new Error("Quota exceeded"); } } });
+    vi.stubGlobal("window", {
+      localStorage: {
+        setItem() {
+          throw new Error("Quota exceeded");
+        }
+      }
+    });
     expect(writeLocal("profile", emptyResume)).toBe(false);
     const setItem = vi.fn();
     vi.stubGlobal("window", { localStorage: { setItem } });

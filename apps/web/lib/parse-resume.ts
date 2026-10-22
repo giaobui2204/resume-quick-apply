@@ -19,6 +19,9 @@ const extractionSchema = ResumeExtractionSchema.extend({
 
 export function parseResumeExtraction(value: unknown) {
   const result = extractionSchema.safeParse(value);
-  if (!result.success) throw new Error("The AI returned incomplete or invalid resume fields. Try again or enter your profile manually.");
+  if (!result.success)
+    throw new Error(
+      "The AI returned incomplete or invalid resume fields. Try again or enter your profile manually."
+    );
   return result.data;
 }

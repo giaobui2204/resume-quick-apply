@@ -25,7 +25,8 @@ export async function extractWithOllama(resumeText: string): Promise<ResumeExtra
         messages: [
           {
             role: "system",
-            content: "You extract resume facts. Never infer or embellish. Missing fields must be empty strings or arrays. Preserve dates as written. Give every list item a short unique string id."
+            content:
+              "You extract resume facts. Never infer or embellish. Missing fields must be empty strings or arrays. Preserve dates as written. Give every list item a short unique string id."
           },
           {
             role: "user",
@@ -42,12 +43,14 @@ export async function extractWithOllama(resumeText: string): Promise<ResumeExtra
     throw new Error("Ollama is not running. Start it with `ollama serve` and try again.");
   }
 
-  const result = await response.json().catch(() => ({})) as OllamaChatResponse;
+  const result = (await response.json().catch(() => ({}))) as OllamaChatResponse;
   if (!response.ok) {
     const missing = response.status === 404 || result.error?.toLowerCase().includes("not found");
-    throw new Error(missing
-      ? `Ollama model "${model}" is missing. Run \`ollama pull ${model}\`.`
-      : result.error || `Ollama returned HTTP ${response.status}.`);
+    throw new Error(
+      missing
+        ? `Ollama model "${model}" is missing. Run \`ollama pull ${model}\`.`
+        : result.error || `Ollama returned HTTP ${response.status}.`
+    );
   }
 
   if (!result.message?.content) throw new Error("Ollama returned an empty response.");

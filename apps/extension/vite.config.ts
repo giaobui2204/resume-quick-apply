@@ -12,14 +12,16 @@ function contentScript(): Plugin {
         configFile: false,
         publicDir: false,
         logLevel: "warn",
-        plugins: [{
-          name: "watch-content-dependencies",
-          buildEnd() {
-            for (const id of this.getModuleIds()) {
-              if (!id.startsWith("\0")) outerContext.addWatchFile(id);
+        plugins: [
+          {
+            name: "watch-content-dependencies",
+            buildEnd() {
+              for (const id of this.getModuleIds()) {
+                if (!id.startsWith("\0")) outerContext.addWatchFile(id);
+              }
             }
           }
-        }],
+        ],
         build: {
           write: false,
           lib: {
@@ -34,7 +36,11 @@ function contentScript(): Plugin {
       for (const bundle of bundles) {
         if (!("output" in bundle)) throw new Error("Expected a completed content-script build.");
         for (const output of bundle.output) {
-          this.emitFile({ type: "asset", fileName: output.fileName, source: output.type === "chunk" ? output.code : output.source });
+          this.emitFile({
+            type: "asset",
+            fileName: output.fileName,
+            source: output.type === "chunk" ? output.code : output.source
+          });
         }
       }
     }
