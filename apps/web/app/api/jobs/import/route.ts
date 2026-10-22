@@ -29,6 +29,8 @@ async function importJob(raw: string) {
   return {
     id: randomUUID(),
     ats,
+    provider: ats,
+    sourceUrl: canonicalUrl,
     externalId: createHash("sha256").update(canonicalUrl).digest("hex").slice(0, 16),
     canonicalUrl,
     applyUrl: canonicalUrl,
