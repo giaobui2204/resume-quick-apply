@@ -187,6 +187,7 @@ No confirmed exploitable P0 was established in the local MVP. Dependency audit r
 - Real-PDF extraction failure from LinkedIn/GitHub URLs without schemes: shared normalization adds only HTTPS syntax to existing domain URLs; invalid fields fail with a safe message.
 - Invalid email previously displayed READY: name/email readiness validation fixed.
 - Hidden extraction collections: existing experience/education/project/certification/GitHub/portfolio facts now have editor controls.
+- Mobile sidebar intrinsic-width overflow fixed; navigation stays within a 390px viewport.
 - Resume picker keyboard access, drag/drop, same-file retry, size/type checks, and same-instance overlapping upload guard fixed.
 - Duplicate jobs within import response, duplicate queued jobs, empty/over-limit imports, and the 25-active-application cap handled.
 - Sequential preparation enforced; user-recorded submission, manual-help handoff, retry, removal/reindexing added. This does not automate actual submission.
@@ -226,3 +227,5 @@ Other small changes: fix `fieldset :disabled` eligibility; add live status roles
 Reviewed: all web entrypoints/styles/dashboard views; every web API/library/test; every extension source/test/HTML/manifest/build/test configuration; the complete shared package; the full Supabase migration; root/workspace manifests and TypeScript/Next configuration; README, acceptance checklist, `.env.example`, `.gitignore`, and dependency lock/audit results. No runtime database queries, server cache, or remote profile-sync implementation exists to evaluate for N+1/egress; adding those speculatively would be over-engineering. Small local counts do not justify broad memoization, virtualization, or a new state-management framework.
 
 Validation includes focused regression tests, all-workspace tests/typechecks, extension production build and classic-script parsing, isolated Chrome UI flow checks, a public Greenhouse import, and a real user-supplied PDF through local Ollama. See the PR for final executed results and any failure limitations; fixtures do not prove live ATS/extension compatibility. The original PDF and extracted personal data are not committed.
+
+Final results: 38 workspace tests pass; workspace typechecks and full production build pass. Real-PDF extraction/profile persistence and queue transitions passed in Chrome; that run identified mobile overflow, which was fixed and followed by a complete passing no-resume browser regression run across all six mobile views and local deletion. Independent agent review approved the scoped local-MVP changes.
