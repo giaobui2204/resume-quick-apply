@@ -13,7 +13,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "node scripts/test-mvp.cjs",
-    "test:e2e:guided": "node scripts/test-guided-mvp.cjs"
+    "test:e2e:guided": "node scripts/test-guided-mvp.cjs",
+    "test:e2e:search": "node scripts/test-job-search.cjs"
   },
   "overrides": {
     "postcss": "^8.5.18",

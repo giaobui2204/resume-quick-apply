@@ -42,3 +42,23 @@ it("coalesces parallel discovery requests, caches boards and reports partial fai
     expect(fetcher).toHaveBeenCalledTimes(3);
   } finally { fetcher.mockRestore(); }
 });
+
+it("filters the entire board before paging and preserves exact explicit levels", async () => {
+  const { vi } = await import("vitest");
+  vi.resetModules();
+  const rows = Array.from({ length: 65 }, (_, index) => ({ id: index + 1, title: `${index < 35 ? "Senior Engineer" : "New Grad Engineer"} ${String(index).padStart(2, "0")}`, absolute_url: `https://job-boards.greenhouse.io/anthropic/jobs/${index + 1}`, location: { name: "Remote" }, content: "Role" }));
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ jobs: rows }));
+  try {
+    const { discoverJobs } = await import("./job-discovery");
+    const filtered = await discoverJobs({ source: "greenhouse", experience: "entry", limit: 10, offset: 20 });
+    expect(filtered.total).toBe(30);
+    expect(filtered.jobs).toHaveLength(10);
+    expect(filtered.hasMore).toBe(false);
+    expect(filtered.jobs.every((job) => job.classification?.experience === "entry")).toBe(true);
+    const first = await discoverJobs({ source: "greenhouse", experience: "entry", limit: 10 });
+    expect(first.hasMore).toBe(true);
+    expect(first.jobs.some((job) => filtered.jobs.some((other) => other.id === job.id))).toBe(false);
+    const unknown = await discoverJobs({ source: "greenhouse", experience: "unknown" });
+    expect(unknown.total).toBe(0);
+  } finally { fetcher.mockRestore(); }
+});

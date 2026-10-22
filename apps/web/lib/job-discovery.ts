@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { JobSnapshot } from "@quick-apply/shared";
 import { assessSponsorship, normalizeJobUrl } from "./job-intelligence";
+import { classifyJob } from "./job-classification";
 import { postingText } from "./job-text";
 export { postingText } from "./job-text";
 
@@ -30,7 +31,7 @@ export function normalizeFeed(source: Source, raw: unknown): JobSnapshot[] {
       const location = source.ats === "greenhouse" ? (item.location as { name?: unknown })?.name : (item.categories as { location?: unknown })?.location;
       const lists = Array.isArray(item.lists) ? item.lists.map((list) => typeof list?.content === "string" ? list.content : "").join(" ") : "";
       const description = postingText(source.ats === "greenhouse" ? typeof item.content === "string" ? item.content : "" : [item.descriptionPlain ?? item.description, lists, item.additionalPlain ?? item.additional].filter((value) => typeof value === "string").join(" "));
-      return [{ id: createHash("sha256").update(canonicalUrl).digest("hex").slice(0, 32), ats: source.ats, externalId: String(item.id), canonicalUrl, applyUrl: canonicalUrl, company: source.company, title, location: typeof location === "string" ? location : "", description, capturedAt: new Date().toISOString() }];
+      return [{ id: createHash("sha256").update(canonicalUrl).digest("hex").slice(0, 32), ats: source.ats, externalId: String(item.id), canonicalUrl, applyUrl: canonicalUrl, company: source.company, title, location: typeof location === "string" ? location : "", description, classification: classifyJob(title, typeof location === "string" ? location : "", item.workplaceType, (item.categories as { commitment?: unknown })?.commitment), capturedAt: new Date().toISOString() }];
     } catch { return []; }
   });
 }
@@ -58,7 +59,7 @@ async function fetchBoard(source: Source): Promise<JobSnapshot[]> {
   try { return await request; } finally { inflight.delete(source.id); }
 }
 
-export async function discoverJobs(options: { q?: string; location?: string; source?: string; limit?: number }) {
+export async function discoverJobs(options: { q?: string; location?: string; source?: string; limit?: number; offset?: number; experience?: string; workMode?: string; employment?: string }) {
   const sources = discoverySources.filter((source) => !options.source || options.source === "all" || options.source === source.ats);
   // Only three configured boards: concurrency is bounded, and requests coalesce per board.
   const results = await Promise.allSettled(sources.map(fetchBoard));
@@ -69,10 +70,12 @@ export async function discoverJobs(options: { q?: string; location?: string; sou
     if (result.status === "rejected") { errors.push(`${sources[index]!.company}: ${result.reason instanceof Error ? result.reason.message : "Could not load jobs"}`); return; }
     result.value.forEach((job) => {
       const search = `${job.title} ${job.company}`.toLowerCase();
-      if (terms.every((term) => search.includes(term)) && (!location || job.location.toLowerCase().includes(location))) jobs.set(job.canonicalUrl, job);
+      if (terms.every((term) => search.includes(term)) && (!location || job.location.toLowerCase().includes(location)) && (["experience", "workMode", "employment"] as const).every((key) => !options[key] || options[key] === "all" || job.classification?.[key] === options[key])) jobs.set(job.canonicalUrl, job);
     });
   });
   const matches = [...jobs.values()].sort((a, b) => a.company.localeCompare(b.company) || a.title.localeCompare(b.title));
   const expiry = Math.min(...sources.map((source) => cache.get(source.id)?.expires ?? Date.now()));
-  return { jobs: matches.slice(0, options.limit ?? 30).map((job) => ({ ...job, sponsorship: assessSponsorship(job.description) })), total: matches.length, errors, sources, cachedUntil: new Date(expiry).toISOString() };
+  const offset = options.offset ?? 0;
+  const limit = options.limit ?? 30;
+  return { offset, limit, hasMore: offset + limit < matches.length, jobs: matches.slice(offset, offset + limit).map((job) => ({ ...job, sponsorship: assessSponsorship(job.description) })), total: matches.length, errors, sources, cachedUntil: new Date(expiry).toISOString() };
 }
