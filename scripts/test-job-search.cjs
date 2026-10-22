@@ -7,7 +7,15 @@ const makeJob = (index, experience) => ({
   location: 'San Francisco, CA', description: 'Fixture posting', capturedAt: new Date().toISOString(),
   classification: { experience, workMode: index % 2 ? 'hybrid' : 'remote', employment: index < 10 ? 'full_time' : 'contract', evidence: { experience: experience === 'unknown' ? [] : ['Explicit fixture title'], workMode: ['Employer workplace metadata'], employment: ['Employer commitment metadata'] } }
 });
-const jobs = [...Array.from({ length: 30 }, (_, i) => makeJob(i, 'senior')), ...Array.from({ length: 31 }, (_, i) => makeJob(i, 'entry')), makeJob(0, 'unknown')];
+const jobs = [...Array.from({ length: 30 }, (_, i) => makeJob(i, 'senior')), ...Array.from({ length: 31 }, (_, i) => makeJob(i, 'entry')), makeJob(0, 'unknown'), {
+  id: 'remotive-1', ats: null, provider: 'remotive', externalId: 'remotive-1',
+  canonicalUrl: 'https://remotive.com/remote-jobs/software-dev/distributed-engineer-1',
+  sourceUrl: 'https://remotive.com/remote-jobs/software-dev/distributed-engineer-1?ref=fixture',
+  attribution: { label: 'Remotive', url: 'https://remotive.com/remote-jobs/software-dev/distributed-engineer-1?ref=fixture' },
+  applyUrl: 'https://remotive.com/remote-jobs/software-dev/distributed-engineer-1?ref=fixture',
+  company: 'Acme Remote', title: 'Distributed Platform Engineer', location: 'Worldwide', description: 'Fixture remote posting',
+  capturedAt: new Date().toISOString(), classification: { experience: 'entry', workMode: 'remote', employment: 'full_time', evidence: { experience: ['Explicit fixture'], workMode: ['Remote'], employment: ['Full-time'] } }
+}];
 
 async function main() {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -20,7 +28,11 @@ async function main() {
       const params = new URL(route.request().url()).searchParams;
       requests.push(Object.fromEntries(params));
       const q = (params.get('q') || '').toLowerCase();
+      const location = (params.get('location') || '').toLowerCase();
+      const source = params.get('source') || 'all';
       const matching = jobs.filter(job => (!q || `${job.title} ${job.company}`.toLowerCase().includes(q)) &&
+        (!location || job.location.toLowerCase().includes(location)) &&
+        (source === 'all' || (source === 'greenhouse' ? job.ats === 'greenhouse' : source === 'lever' ? job.ats === 'lever' : (job.provider || job.ats) === source)) &&
         ['experience', 'workMode', 'employment'].every(key => !params.get(key) || params.get(key) === 'all' || job.classification[key] === params.get(key)));
       const offset = Number(params.get('offset') || 0);
       const limit = Number(params.get('limit') || 30);
@@ -31,13 +43,25 @@ async function main() {
     await expect(page.locator('.job-card')).toHaveCount(30);
     await expect(page.getByRole('heading', { name: 'Find your next move.', exact: true })).toBeVisible();
     await page.screenshot({ path: '/tmp/applypilot-search-desktop.png' });
+    await page.getByLabel('Job keywords', { exact: true }).fill('Software Engineer');
+    await page.getByLabel('Location', { exact: true }).fill('San Francisco, CA');
+    await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
+    await expect(page.locator('.job-card')).toHaveCount(30);
+    const linkedIn = new URL(await page.getByRole('link', { name: 'Search LinkedIn ↗', exact: true }).getAttribute('href'));
+    const indeed = new URL(await page.getByRole('link', { name: 'Search Indeed ↗', exact: true }).getAttribute('href'));
+    if (linkedIn.searchParams.get('keywords') !== 'Software Engineer' || linkedIn.searchParams.get('location') !== 'San Francisco, CA' || indeed.searchParams.get('q') !== 'Software Engineer' || indeed.searchParams.get('l') !== 'San Francisco, CA') throw new Error('External search links did not preserve applied search criteria');
+    await page.getByLabel('Job keywords', { exact: true }).fill('');
+    await page.getByLabel('Location', { exact: true }).fill('');
+    await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
+    await expect(page.locator('.job-card')).toHaveCount(30);
+    console.log('PASS LinkedIn and Indeed shortcuts carry applied keywords and location');
     await page.getByRole('radio', { name: 'Entry / new grad', exact: true }).check();
     await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
     await expect(page.locator('.job-card')).toHaveCount(30);
     await expect(page.locator('.job-card').first()).toContainText('New Grad');
     await page.getByLabel('Job keywords', { exact: true }).fill('unsent draft');
     await page.getByRole('button', { name: 'Load more jobs', exact: true }).click();
-    await expect(page.locator('.job-card')).toHaveCount(31);
+    await expect(page.locator('.job-card')).toHaveCount(32);
     const last = requests.at(-1);
     if (last.experience !== 'entry' || last.q !== '') throw new Error('Pagination did not retain submitted criteria');
     await expect(page.getByRole('button', { name: 'Load more jobs', exact: true })).toHaveCount(0);
@@ -48,9 +72,9 @@ async function main() {
     await page.getByLabel('Work mode', { exact: true }).selectOption('remote');
     await page.getByLabel('Employment type', { exact: true }).selectOption('full_time');
     await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
-    await expect(page.locator('.job-card')).toHaveCount(5);
+    await expect(page.locator('.job-card')).toHaveCount(6);
     await page.getByRole('button', { name: /Remove experience filter/ }).click();
-    await expect(page.locator('.job-card')).toHaveCount(11);
+    await expect(page.locator('.job-card')).toHaveCount(12);
     await page.getByRole('button', { name: 'Clear all', exact: true }).click();
     await expect(page.locator('.job-card')).toHaveCount(30);
     await page.getByRole('radio', { name: 'Not specified', exact: true }).check();
@@ -68,6 +92,17 @@ async function main() {
     await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
     await expect(page.locator('.job-card')).toHaveCount(30);
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error('Mobile search overflows');
+    await page.getByLabel('Job source', { exact: true }).selectOption('remotive');
+    await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
+    await expect(page.locator('.job-card')).toHaveCount(1);
+    await expect(page.locator('.job-card').first()).toContainText('Source: Remotive');
+    await expect(page.locator('.job-card').first()).toContainText('View on Remotive');
+    await expect(page.locator('.external-apply-note')).toBeVisible();
+    const footerOverflows = await page.locator('.job-actions').evaluate(footer => [...footer.children].some(child => child.getBoundingClientRect().right > innerWidth + 1));
+    if (footerOverflows) throw new Error('Remotive attribution/apply actions overflow on mobile');
+    await page.getByLabel('Job source', { exact: true }).selectOption('all');
+    await page.getByRole('button', { name: 'Find jobs', exact: true }).click();
+    await expect(page.locator('.job-card')).toHaveCount(30);
     await page.screenshot({ path: '/tmp/applypilot-search-mobile.png' });
     await page.locator('.job-card').first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: '/tmp/applypilot-search-mobile-results.png' });

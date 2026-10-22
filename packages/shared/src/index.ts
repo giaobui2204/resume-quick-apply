@@ -98,9 +98,18 @@ export const JobClassificationSchema = z.object({
 });
 export type JobClassification = z.infer<typeof JobClassificationSchema>;
 
+// Source calendar date, independent of collection time or an assumed timezone.
+export const PostedDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
+}, "Invalid calendar date");
+
 export const JobSnapshotSchema = z.object({
   id: z.string(),
-  ats: AtsSchema,
+  ats: AtsSchema.nullable(),
+  provider: z.enum(["greenhouse", "lever", "remotive"]).optional(),
+  sourceUrl: z.string().url().optional(),
+  attribution: z.object({ label: z.string(), url: z.string().url() }).optional(),
   externalId: z.string(),
   canonicalUrl: z.string().url(),
   applyUrl: z.string().url(),
@@ -109,6 +118,7 @@ export const JobSnapshotSchema = z.object({
   location: z.string().default(""),
   description: z.string(),
   capturedAt: z.string().datetime(),
+  postedDate: PostedDateSchema.optional(),
   sponsorship: SponsorshipAssessmentSchema.optional(),
   classification: JobClassificationSchema.optional()
 });
