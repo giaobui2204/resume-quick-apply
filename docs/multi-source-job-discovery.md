@@ -4,7 +4,7 @@ Research and product direction, 2026-10-22. The request is to show a broad mix o
 
 ## Current state
 
-The original Jobs view fetched three employer-specific boards: Anthropic and Figma through Greenhouse, and Palantir through Lever. The first multi-source slice now adds Remotive's remote-only feed and LinkedIn/Indeed outbound search shortcuts. It supports keyword, location, experience, work-mode, employment and source filters, plus manual Greenhouse/Lever link import. This broadens coverage without claiming a LinkedIn/Indeed data integration; the connected feed still does not cover the whole market.
+The original Jobs view fetched three employer-specific boards: Anthropic and Figma through Greenhouse, and Palantir through Lever. The first multi-source slice added Remotive's remote-only feed and LinkedIn/Indeed outbound search shortcuts. This continuation adds Ashby-backed public boards for Ramp, Linear and Lovable, broadening direct employer coverage across hybrid, onsite and remote work. LinkedIn and Indeed remain external search shortcuts, not imported feeds; the connected sources still do not cover the whole market.
 
 ## Access reality for LinkedIn and Indeed
 
@@ -20,13 +20,15 @@ These restrictions mean we should not promise a unified LinkedIn/Indeed inventor
 | Source | Coverage and access | Good fit / limitation |
 | --- | --- | --- |
 | Remotive | Public remote-job API; its guidance requires attribution and linking back, delays jobs by 24 hours, recommends no more than four fetches per day, and says the feed must not be gated behind signup. | A low-cost first integrated source for remote roles. It does not represent onsite/hybrid openings or the whole US market, and needs source-specific cache/freshness handling. |
+| Ashby public job board API | Documented GET endpoint returns currently published postings for a known organization job-board name, including listing/apply URLs, workplace type, employment type and publication date when available. | A bounded registry can add verified employers with a single request per board. Start with Ramp, Linear and Lovable; only listed postings are shown. The 15-minute cache is ApplyPilot policy, not a published Ashby quota. Keep source and apply URLs distinct and keep ATS autofill capability explicit. |
+| Himalayas | Free public no-auth remote-job API intended for job-search products; no CORS, maximum 20 results per page, daily data refresh, attribution/linkback required, and listings must not be resubmitted to third-party aggregators. | Potential remote coverage expansion. Before integrating, design a bounded daily cache/pagination strategy that avoids per-query upstream requests and does not claim the API's full `totalCount` is locally searchable. |
 | The Muse | Public jobs API has filters and test access; broader/production use requires registration under its terms. | Potential structured source to evaluate after approval and access conditions are clear. |
 | Adzuna | Search API supports keyword/location listings and requires app credentials. Its terms describe no-payment evaluation access, then a 14-day commercial trial followed by licensing for commercial use. | Strong aggregator candidate if its coverage is useful and licensing/pricing fit. Do not ship a paid connector enabled by default or assume evaluation terms cover production. |
 | Jooble | Search API requires a key and region-specific setup. | Another aggregator to evaluate for coverage, rights, freshness and commercial terms before integration. |
 | USAJOBS | Official search API with an API key; US federal announcements only. | Useful optional source for federal roles, not a broad private-sector replacement. |
 | Greenhouse, Lever, Ashby and other ATS career boards | Public postings can be fetched per employer/board when the board identifier is known. | Expand the direct-employer registry to add verified employers across industries, locations and levels. It improves direct-source breadth but is not a global index by itself. |
 
-The initial mix is now direct employer boards plus Remotive, with external LinkedIn/Indeed search shortcuts. Evaluate The Muse, Adzuna and Jooble against actual coverage and access terms. Add Indeed's hosted publisher module only after its partner access is granted and only if its required presentation fits the product. Keep LinkedIn as an external search destination unless authorized inventory access becomes available.
+The current mix is six direct employer boards plus Remotive, with external LinkedIn/Indeed search shortcuts. The Jobs page now has a selected-source coverage disclosure with each board's checked/cached/unavailable state and latest successful app check. Evaluate The Muse, Adzuna and Jooble against actual coverage and access terms. Add Indeed's hosted publisher module only after its partner access is granted and only if its required presentation fits the product. Keep LinkedIn as an external search destination unless authorized inventory access becomes available.
 
 ## Recommended architecture
 
@@ -62,16 +64,18 @@ Detailed UI treatment and edge states from the design agent are in [multi-source
 ### P0 — broaden discovery honestly without paid services
 
 1. **Done:** LinkedIn and Indeed external search shortcuts preserve the applied query/location and are clearly excluded from ApplyPilot's integrated result count.
-2. **Done:** job snapshots separate discovery provider from nullable ATS; Remotive source IDs, original URLs and attribution are preserved.
+2. **Done:** job snapshots separate discovery provider from ATS; Remotive and Ashby source IDs, original URLs, attribution and known application destinations are preserved.
 3. Expand the direct-employer registry across more industries and role levels, verifying each board identifier and preserving source-specific errors.
 4. **Done:** Remotive is integrated with attribution/linkback, its 24-hour upstream delay disclosed, and refresh throttled/cached for six hours in this single-server preview.
 5. **Done:** partial-source failures keep successful results; matching records are filtered before stable pagination and interleaved across feeds. Live results exposed an initial Anthropic-only page; deterministic round-robin now displays each connected feed early and rotates Remotive employers.
+6. **Done:** Ashby adapter adds verified Ramp, Linear and Lovable boards, filters explicitly unlisted jobs, retains secondary locations and valid publication dates, and maps supported workplace/employment metadata. Ashby remains outside extension autofill support.
+7. **Done:** source coverage shows only the feeds actually selected, per-feed checked/cache/error state, and the last successful server response time. The general results timestamp is labeled as a search time, not a job-feed publication time.
 
 ### Delivered in the first slice
 
-The source filter now includes Remotive. Remotive records keep their provider listing URL and attribution, have no assumed ATS, and show that ApplyPilot's extension fill remains limited to Greenhouse/Lever forms. A live request returned 1,137 total combined matches with no source errors at the time of the check; the first 50 included Greenhouse, Lever and Remotive roles. Remotive coverage is remote-only, delayed by a day, and not a substitute for LinkedIn/Indeed or the wider private-sector market. These counts are point-in-time and change as sources update.
+The source filter includes Remotive and Ashby. Ashby records keep the hosted job URL, separate apply URL, known Ashby ATS, employer name, secondary locations, source attribution and valid source publication date. The first verified Ashby boards returned 171 Ramp, 34 Linear and 78 Lovable postings during integration checks; those are point-in-time counts, not permanent inventory. Ashby listings are interleaved with other boards before pagination. Extension filling remains limited to Greenhouse/Lever forms. Remotive is remote-only and delayed by a day. Neither connected inventory covers all jobs available on LinkedIn, Indeed or the wider market.
 
-Known gaps in this slice: coverage is still three named employer boards plus a remote-only feed; LinkedIn and Indeed are external searches, not imported results. The UI has an overall search update time and source error messages, but does not yet expose a separate last-successful-fetch timestamp for each provider. Remotive refresh happens on search requests, at most once per six hours per server; it is not a scheduled crawler. A multi-instance production deployment still needs a shared refresh lock/cache for the provider request budget.
+Known gaps in this slice: coverage is six named employer boards plus a remote-only feed; LinkedIn and Indeed are external searches, not imported results. The employer registry is deliberately small and needs ongoing verified additions. Per-feed timestamps describe the last successful response checked by the app; provider/CDN data may itself be cached upstream. Remotive refresh happens on search requests, at most once per six hours per server; it is not a scheduled crawler. Ashby uses a 15-minute app cache policy. A multi-instance production deployment still needs shared cache/coordination for consistent freshness and provider request control.
 
 ### P1 — evaluate wider aggregators
 
@@ -106,6 +110,8 @@ These criteria describe the complete multi-source roadmap, not claims that the i
 - [Indeed Publisher JavaScript Plugin](https://docs.indeed.com/indeed-plus/publisher-js-plugin) — Indeed-rendered search UI, provisioned partner/placement IDs, display behavior and limits
 - [Indeed Plugin Terms](https://docs.indeed.com/legal-terms/plugin-terms)
 - [Remotive remote jobs API](https://github.com/remotive-com/remote-jobs-api)
+- [Ashby Job Postings API](https://developers.ashbyhq.com/docs/public-job-posting-api)
+- [Himalayas Remote Jobs API and attribution terms](https://github.com/Himalayas-App/remote-jobs-api)
 - [The Muse API](https://www.themuse.com/developers/api/v2) and [API terms](https://www.themuse.com/developers/api/v2/terms)
 - [Adzuna API overview](https://developer.adzuna.com/overview), [search endpoint](https://developer.adzuna.com/docs/search), and [terms](https://developer.adzuna.com/docs/terms_of_service)
 - [Jooble REST API](https://jooblehelpcenter.freshdesk.com/en/support/solutions/articles/60001448238-rest-api-documentation)

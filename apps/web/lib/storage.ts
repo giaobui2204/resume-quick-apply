@@ -1,6 +1,12 @@
 "use client";
 
-import { ApplicationSchema, ContactSchema, JobSnapshotSchema, ResumeExtractionSchema, WorkAuthorizationSchema } from "@quick-apply/shared";
+import {
+  ApplicationSchema,
+  ContactSchema,
+  JobSnapshotSchema,
+  ResumeExtractionSchema,
+  WorkAuthorizationSchema
+} from "@quick-apply/shared";
 import { z } from "zod";
 
 // Editing persists incomplete strings; strict email/URL validation belongs at use time.

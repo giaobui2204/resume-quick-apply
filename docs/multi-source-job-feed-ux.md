@@ -49,3 +49,7 @@ Keep keyword/location and explicit experience/work-mode/employment filters. Sour
 - **P2:** real scheduled alerts, provider-aware date/salary filters, reviewed uncertain-duplicate groups, saved-search change notifications, and documented provider coverage limits. Expand integrations through a reusable source contract rather than source-specific page logic.
 
 Mobile: coverage opens a readable disclosure/drawer; source choices wrap or stack with 44px targets; attribution and stale status remain visible on cards. Preserve the current search layout and progressive filters instead of adding another large dashboard panel. Validate a duplicate across three sources, a same-title distinct requisition, one failed source, a closed saved job, an external-only provider, and switching between saved searches with different coverage.
+
+## Current delivered source coverage treatment
+
+The source filter includes Greenhouse, Lever, Ashby (Ramp, Linear and Lovable) and Remotive. LinkedIn and Indeed remain external-search actions. A collapsed **View coverage** disclosure lists only boards included in the current search, with **Checked**, **Cached** or **Unavailable** status and a timestamp for the latest successful app check. The results timestamp says **Searched** to distinguish the user's search request from provider publication time. Ashby cards show source attribution and the Ashby application link, with a note that extension autofill remains limited to Greenhouse and Lever.

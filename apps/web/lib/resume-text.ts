@@ -19,9 +19,14 @@ export async function extractResumeText(file: File): Promise<string> {
     throw new Error("Unsupported resume type");
   }
 
-  const normalized = text.replace(/\u0000/g, "").replace(/[ \t]+\n/g, "\n").trim();
+  const normalized = text
+    .replace(/\u0000/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
   if (normalized.length < 30) {
-    throw new Error("The resume contains too little readable text. Scanned-image resumes are not supported yet.");
+    throw new Error(
+      "The resume contains too little readable text. Scanned-image resumes are not supported yet."
+    );
   }
   return normalized.slice(0, 100_000);
 }
@@ -39,7 +44,7 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
-      pages.push(content.items.map((item) => "str" in item ? item.str : "").join(" "));
+      pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
       page.cleanup();
     }
   } finally {

@@ -39,10 +39,12 @@ export async function saveVerifiedProfile(profile: ExtensionProfile): Promise<vo
 function isProfile(value: unknown): value is ExtensionProfile {
   if (!value || typeof value !== "object") return false;
   const profile = value as Partial<ExtensionProfile>;
-  return typeof profile.legalName === "string"
-    && typeof profile.email === "string"
-    && typeof profile.phone === "string"
-    && typeof profile.linkedIn === "string"
-    && typeof profile.location === "string"
-    && typeof profile.verifiedAt === "string";
+  return (
+    typeof profile.legalName === "string" &&
+    typeof profile.email === "string" &&
+    typeof profile.phone === "string" &&
+    typeof profile.linkedIn === "string" &&
+    typeof profile.location === "string" &&
+    typeof profile.verifiedAt === "string"
+  );
 }
