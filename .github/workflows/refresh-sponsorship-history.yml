@@ -1,0 +1,29 @@
+name: Refresh DOL sponsorship history
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dol-sponsorship-history-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements-sponsorship.txt
+      - name: Install pinned importer dependencies
+        run: python -m pip install -r scripts/requirements-sponsorship.txt
+      - name: Import the reviewed DOL source manifest
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python scripts/import_dol_sponsorship.py

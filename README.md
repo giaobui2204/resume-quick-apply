@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The runnable MVP stores resume profiles in IndexedDB and other workspace data in browser-local storage. Supabase is not connected yet. Every profile field remains manually editable.
+Open `http://localhost:3000`. Resume profiles remain in IndexedDB and other workspace data remains in browser-local storage. The optional H‑1B/PERM history drawer uses Supabase only when a database is configured and a DOL release has been imported; otherwise it reports that history is unavailable. Every profile field remains manually editable.
 
 ## Guided workflow and resume library
 
@@ -51,6 +51,40 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-5.6-terra
 ```
 
+## H‑1B and PERM employer history
+
+Job-description language and historical employer filings are separate signals. The filing history index is built from DOL OFLC LCA and PERM disclosure workbooks for FY2024, FY2025, and partial FY2026. The importer filters LCA rows to H‑1B, deduplicates cases by program and fiscal year, combines the two FY2024 PERM form files, and stores only employer/title/status aggregates plus LCA wage summaries in the filed unit. Raw workbooks and case identifiers are temporary ETL inputs; the database does not store them. Source snapshots and cut-off dates are recorded with every release.
+
+Counts are distinct DOL cases, not workers or job offers. LCA filings can include extensions, transfers, and amendments; they do not show USCIS approval or prove sponsorship for a specific opening. DOL-filed wages are shown by their original units and are not a job's salary or total compensation. PERM history is separate from H‑1B and does not mean a green card was granted. The importer and browser API use exact normalized legal names and explicit aliases; possible name matches require user confirmation.
+
+### Local database and import
+
+Install the [Supabase CLI](https://supabase.com/docs/guides/cli) and Docker, then start the local database and apply the migrations:
+
+```bash
+supabase start
+supabase db reset
+```
+
+Copy the local API URL and anon key from `supabase status` into `apps/web/.env.local` as `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Export Supabase's local database URL for the importer (typically `postgresql://postgres:postgres@127.0.0.1:54322/postgres`):
+
+```bash
+export SUPABASE_DB_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+```
+
+Install the pinned importer packages and run:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r scripts/requirements-sponsorship.txt
+python scripts/import_dol_sponsorship.py
+```
+
+`python scripts/import_dol_sponsorship.py --dry-run` downloads and validates the source files without writing to Postgres. Workbooks are downloaded to a temporary directory and removed after import. The importer stages a new release, validates row counts, then switches the published release in one transaction; a failed import leaves the previous release active.
+
+The manual **Refresh DOL sponsorship history** GitHub Action uses the same pinned importer. Before running it, apply all migrations to the hosted Supabase project, set `SUPABASE_DB_URL` as a GitHub Actions secret, and configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the web app. Update `scripts/dol-sponsorship-sources.json` only after a newer official DOL quarterly disclosure is available. The current FY2026 Q3 files cover determinations through June 30, 2026. No service-role key is used by the web API; the private database URL is used by the importer only.
+
 ## Load the Chrome extension
 
 ```bash
@@ -63,10 +97,10 @@ The extension requests access only to Greenhouse and Lever. Open its popup, save
 
 ## Production setup
 
-1. Create a Supabase project and apply the migrations in `supabase/migrations` in order. The second migration adds multi-resume indexes, live-upload deduplication and an application/resume owner guard. These migrations have not been executed against a hosted database by the local checks.
-2. Create a private `resumes` storage bucket.
-3. Configure the values in `.env.example`. Use a server-accessible AI provider in hosted deployments; `127.0.0.1` refers to the deployment server, not the end user’s computer.
-4. Replace the browser-local repository with authenticated Supabase queries.
+1. Create a Supabase project and apply the migrations in `supabase/migrations` in order. Migration 0003 adds privacy-minimized DOL release tables, read-only policies, indexes, and the search RPC. The preview does not connect candidate profiles or applications to Supabase yet.
+2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the web app. These permit read-only queries of published public filing aggregates under RLS.
+3. Set `SUPABASE_DB_URL` only as a GitHub Actions secret for the importer, then run the manual refresh workflow. Do not expose it to the browser or set it as a `NEXT_PUBLIC_` variable.
+4. Create a private `resumes` storage bucket. Use a server-accessible AI provider in hosted deployments; `127.0.0.1` refers to the deployment server, not the end user’s computer.
 5. Complete privacy policy, retention policy, security review, extension pairing, and Chrome Web Store review.
 
 ## Checkpoints
