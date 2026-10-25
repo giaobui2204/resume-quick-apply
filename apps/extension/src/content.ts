@@ -1,13 +1,15 @@
-import { discoverFields, fillField, type ExtensionProfile, type FieldMatch } from "./field-mapper";
+import { discoverFields, fillField, type FieldMatch } from "./field-mapper";
+import { loadVerifiedProfile } from "./profile-storage";
 
 let matches: FieldMatch[] = [];
 
 async function mount() {
   if (document.querySelector("#applypilot-panel")) return;
-  const result = await chrome.storage.local.get("verifiedProfile");
-  const profile = result.verifiedProfile as ExtensionProfile | undefined;
+  const profile = await loadVerifiedProfile();
   matches = profile?.verifiedAt ? discoverFields(profile) : [];
-  const captcha = Boolean(document.querySelector('[class*="captcha" i], iframe[src*="captcha" i], [data-sitekey]'));
+  const captcha = Boolean(
+    document.querySelector('[class*="captcha" i], iframe[src*="captcha" i], [data-sitekey]')
+  );
   const panel = document.createElement("aside");
   panel.id = "applypilot-panel";
   panel.innerHTML = `
@@ -40,7 +42,10 @@ async function mount() {
   panel.querySelector("#applypilot-fill")?.addEventListener("click", () => {
     const count = matches.filter(fillField).length;
     const button = panel.querySelector<HTMLButtonElement>("#applypilot-fill");
-    if (button) { button.textContent = `${count} fields filled · Review before submit`; button.disabled = true; }
+    if (button) {
+      button.textContent = `${count} fields filled · Review before submit`;
+      button.disabled = true;
+    }
   });
 }
 
