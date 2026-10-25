@@ -130,6 +130,86 @@ export const JobSnapshotSchema = z.object({
   classification: JobClassificationSchema.optional()
 });
 
+export const SponsorshipHistoryResponseSchema = z.object({
+  release: z.object({
+    id: z.string().uuid(),
+    version: z.string(),
+    publishedAt: z.string().datetime(),
+    sources: z.array(
+      z.object({
+        program: z.enum(["lca", "perm"]),
+        fiscalYear: z.number().int(),
+        quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]),
+        dataThrough: PostedDateSchema,
+        sourceUrl: z.string().url(),
+        checksum: z.string().regex(/^[a-f0-9]{64}$/),
+        partial: z.boolean()
+      })
+    )
+  }),
+  results: z.array(
+    z.object({
+      id: z.string().optional(),
+      company: z.string(),
+      title: z.string(),
+      status: z.enum(["available", "available_company_only", "no_match", "possible_matches"]),
+      matchedEmployer: z
+        .object({ legalName: z.string(), match: z.enum(["exact", "curated_alias", "user_selected"]) })
+        .optional(),
+      possibleEmployers: z
+        .array(
+          z.object({
+            legalName: z.string(),
+            match: z.enum(["curated_alias", "possible_candidate"])
+          })
+        )
+        .optional(),
+      programs: z.object({
+        lca: z.object({
+          years: z.array(
+            z.object({
+              fiscalYear: z.number().int(),
+              employerCaseCount: z.number().int().nonnegative(),
+              employerStatusCounts: z.array(
+                z.object({ status: z.string(), count: z.number().int().nonnegative() })
+              ),
+              exactTitleCount: z.number().int().nonnegative(),
+              exactTitleStatusCounts: z.array(
+                z.object({ status: z.string(), count: z.number().int().nonnegative() })
+              ),
+              wageStatsByUnit: z.array(
+                z.object({
+                  unit: z.string(),
+                  sampleCount: z.number().int().nonnegative(),
+                  minFrom: z.number().nonnegative().nullable(),
+                  medianFrom: z.number().nonnegative().nullable(),
+                  maxTo: z.number().nonnegative().nullable()
+                })
+              )
+            })
+          )
+        }),
+        perm: z.object({
+          years: z.array(
+            z.object({
+              fiscalYear: z.number().int(),
+              employerCaseCount: z.number().int().nonnegative(),
+              employerStatusCounts: z.array(
+                z.object({ status: z.string(), count: z.number().int().nonnegative() })
+              ),
+              exactTitleCount: z.number().int().nonnegative(),
+              exactTitleStatusCounts: z.array(
+                z.object({ status: z.string(), count: z.number().int().nonnegative() })
+              )
+            })
+          )
+        })
+      })
+    })
+  )
+});
+export type SponsorshipHistoryResponse = z.infer<typeof SponsorshipHistoryResponseSchema>;
+
 export const ApplicationStatusSchema = z.enum([
   "queued",
   "analyzing",
