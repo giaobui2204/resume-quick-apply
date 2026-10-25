@@ -208,19 +208,20 @@ async function main() {
     await page.getByLabel("Location", { exact: true }).fill("San Francisco, CA");
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
     await expect(page.locator(".job-card")).toHaveCount(20);
-    const linkedIn = new URL(
-      await page.getByRole("link", { name: "Search LinkedIn ↗", exact: true }).getAttribute("href")
-    );
-    const indeed = new URL(
-      await page.getByRole("link", { name: "Search Indeed ↗", exact: true }).getAttribute("href")
-    );
-    if (
-      linkedIn.searchParams.get("keywords") !== "Software Engineer" ||
-      linkedIn.searchParams.get("location") !== "San Francisco, CA" ||
-      indeed.searchParams.get("q") !== "Software Engineer" ||
-      indeed.searchParams.get("l") !== "San Francisco, CA"
-    )
-      throw new Error("External search links did not preserve applied search criteria");
+    // The previous and new searches both have 20 cards. Wait for the applied
+    // criteria to reach the links instead of treating that unchanged count as completion.
+    await expect(async () => {
+      const linkedIn = new URL(
+        await page.getByRole("link", { name: "Search LinkedIn ↗", exact: true }).getAttribute("href")
+      );
+      const indeed = new URL(
+        await page.getByRole("link", { name: "Search Indeed ↗", exact: true }).getAttribute("href")
+      );
+      expect(linkedIn.searchParams.get("keywords")).toBe("Software Engineer");
+      expect(linkedIn.searchParams.get("location")).toBe("San Francisco, CA");
+      expect(indeed.searchParams.get("q")).toBe("Software Engineer");
+      expect(indeed.searchParams.get("l")).toBe("San Francisco, CA");
+    }).toPass();
     await page.getByLabel("Job keywords", { exact: true }).fill("");
     await page.getByLabel("Location", { exact: true }).fill("");
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
