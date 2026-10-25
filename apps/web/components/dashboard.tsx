@@ -1007,12 +1007,17 @@ function JobsView({
 }
 
 function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; onQueue: () => void }) {
+  const h1bHistoryUrl = (year: number) => {
+    const params = new URLSearchParams({ em: job.company, job: job.title, year: String(year) });
+    return `https://h1bdata.info/index.php?${params.toString()}`;
+  };
   const labels: [string, string][] = job.sponsorship
     ? [
         ["CPT", job.sponsorship.cpt.label],
         ["OPT", job.sponsorship.opt.label],
         ["STEM OPT", job.sponsorship.stemOpt.label],
-        ["H-1B", job.sponsorship.h1bFuture.label]
+        ["H-1B now", job.sponsorship.h1bNow.label],
+        ["H-1B future", job.sponsorship.h1bFuture.label]
       ]
     : [];
   return (
@@ -1100,7 +1105,8 @@ function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; 
               ["CPT", job.sponsorship.cpt],
               ["OPT", job.sponsorship.opt],
               ["STEM OPT", job.sponsorship.stemOpt],
-              ["H-1B", job.sponsorship.h1bFuture]
+              ["H-1B now", job.sponsorship.h1bNow],
+              ["H-1B future", job.sponsorship.h1bFuture]
             ] as const
           ).map(([name, signal]) => (
             <div key={name}>
@@ -1113,6 +1119,35 @@ function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; 
           ))}
         </details>
       )}
+      <details className="job-evidence employer-history">
+        <summary>Check company H-1B and green card history</summary>
+        <p>
+          Job description signals describe this opening. Filing history is employer-wide context and does not
+          promise sponsorship for this role.
+        </p>
+        <div className="history-links">
+          {[2024, 2025, 2026].map((year) => (
+            <a key={year} href={h1bHistoryUrl(year)} target="_blank" rel="noreferrer">
+              H-1B {year} ↗
+            </a>
+          ))}
+          <a href="https://www.myvisajobs.com/employers/search.aspx" target="_blank" rel="noreferrer">
+            Search H-1B + green card filings ↗
+          </a>
+          <a
+            href="https://www.dol.gov/agencies/eta/foreign-labor/performance"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Official DOL LCA + PERM data ↗
+          </a>
+        </div>
+        <p className="muted">
+          An LCA is not proof that USCIS approved an H-1B petition or that a worker was hired. PERM is a
+          separate green card labor-certification step, not proof that a green card was granted. Company
+          filings may use another legal entity name; verify the employer and job title in the source records.
+        </p>
+      </details>
       <div className="job-actions">
         {job.attribution && (
           <a className="job-attribution" href={job.attribution.url} target="_blank" rel="noreferrer">
