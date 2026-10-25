@@ -828,6 +828,21 @@ blockquote {
   cursor: pointer;
   color: var(--green);
 }
+.employer-history > p {
+  max-width: 760px;
+  color: var(--muted);
+}
+.history-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+.history-links a {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 700;
+}
 fieldset {
   min-width: 0;
   border: 1px solid var(--line);
