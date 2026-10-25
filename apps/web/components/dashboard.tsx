@@ -1,6 +1,13 @@
 "use client";
 
-import type { Application, JobSnapshot, ResumeExtraction, WorkAuthorization } from "@quick-apply/shared";
+import {
+  canonicalAssistUrl,
+  type Application,
+  type ApplicationAssistPackage,
+  type JobSnapshot,
+  type ResumeExtraction,
+  type WorkAuthorization
+} from "@quick-apply/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emptyAuthorization, emptyResume } from "@/lib/demo-data";
 import {
@@ -30,6 +37,7 @@ import { StepNavigation, flow, type View } from "./step-navigation";
 import { mergeJobs } from "@/lib/job-workspace";
 import { JobDiscoveryPanel } from "./job-discovery-panel";
 import { ResumeLibraryPanel } from "./resume-library-panel";
+import { ApplicationAssistReview, downloadAssistPackage } from "./application-assist-review";
 import { SponsorshipHistoryPanel } from "./sponsorship-history-panel";
 const validContact = (profile: ResumeExtraction) =>
   Boolean(profile.contact.legalName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.contact.email));
@@ -284,6 +292,7 @@ export function Dashboard() {
         {view === "applications" && (
           <ApplicationsView
             applications={applications}
+            profile={profile}
             onApplications={saveApplications}
             canPrepare={profileReady && Boolean(authorization.confirmedAt) && !libraryBusy && !savingResume}
             activeResumeId={library.activeResumeId}
@@ -1122,6 +1131,7 @@ function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; 
 
 function ApplicationsView({
   applications,
+  profile,
   onApplications,
   canPrepare,
   activeResumeId,
@@ -1129,136 +1139,223 @@ function ApplicationsView({
   onReview
 }: {
   applications: Application[];
+  profile: ResumeExtraction;
   onApplications: (items: Application[]) => void;
   canPrepare: boolean;
   activeResumeId: string | null;
   activeResumeName?: string;
   onReview: (id?: string | null) => void;
 }) {
-  const counts = useMemo(
-    () => ({
-      queued: applications.filter((a) => a.status === "queued").length,
-      review: applications.filter((a) => a.status === "review_required").length,
-      submitted: applications.filter((a) => a.status === "submitted").length,
-      blocked: applications.filter((a) => a.status === "blocked").length
-    }),
-    [applications]
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [outcomeId, setOutcomeId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<"submitted" | "submission_unknown" | "blocked">(
+    "submission_unknown"
   );
-  const active = applications.find((item) =>
-    ["analyzing", "ready", "filling", "review_required", "submitting", "submission_unknown"].includes(
-      item.status
-    )
-  );
-  const update = (id: string, status: Application["status"]) => {
-    const application = applications.find((item) => item.id === id);
-    if (
-      status === "ready" &&
-      (active || !canPrepare || (application?.resumeId && application.resumeId !== activeResumeId))
-    )
-      return;
+  const [outcomeConfirmed, setOutcomeConfirmed] = useState(false);
+  const reviewing = applications.find((item) => item.id === reviewingId);
+  function replace(id: string, patch: Partial<Application>) {
     onApplications(
       applications.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...(status === "ready" && !item.resumeId
-                ? { resumeId: activeResumeId, resumeName: activeResumeName }
-                : {}),
-              status,
-              updatedAt: new Date().toISOString()
-            }
-          : item
+        item.id === id ? { ...item, ...patch, updatedAt: new Date().toISOString() } : item
       )
     );
+  }
+  function confirmPackage(value: ApplicationAssistPackage) {
+    replace(value.applicationId, {
+      assistPackage: value,
+      resumeId: value.resume.id,
+      resumeName: value.resume.name,
+      status: "ready"
+    });
+    downloadAssistPackage(value);
+    setReviewingId(null);
+  }
+  const labels: Partial<Record<Application["status"], string>> = {
+    queued: "Not prepared",
+    review_required: "Review required",
+    ready: "Package prepared",
+    submitted: "Submitted · self-reported",
+    submission_unknown: "Outcome unknown",
+    blocked: "Needs manual help"
   };
   return (
     <section className="page">
       <PageTitle
-        eyebrow="STEP 4 · APPLICATIONS"
-        title="One focused application at a time"
-        text="Prepare a job, open its form, and use the extension to fill verified contact fields. Record the outcome here after reviewing the form."
+        eyebrow="STEP 4 · APPLICATION ASSIST"
+        title="Review your facts, then apply"
+        text="Prepare a reviewed package for the extension. Fill selected fields on a matching Greenhouse or Lever form, attach your resume, and click the employer’s Submit button yourself."
       />
-      <div className="count-row">
-        {Object.entries(counts).map(([label, count]) => (
-          <div className="count-card" key={label}>
-            <strong>{count}</strong>
-            <span>{label}</span>
-          </div>
-        ))}
-      </div>
-      <p className="muted">
-        Save your verified contact details in the extension popup first. This local preview does not
-        automatically sync profiles or application outcomes with the extension.
+      <p className="notice">
+        Downloading a package or opening a form does not submit an application. Import the JSON in the
+        extension, review detected fields, then choose Fill selected fields. Record the outcome here
+        afterward.
       </p>
+      {reviewing && activeResumeId && (!reviewing.resumeId || reviewing.resumeId === activeResumeId) && (
+        <ApplicationAssistReview
+          key={reviewing.id}
+          application={reviewing}
+          profile={profile}
+          resumeId={activeResumeId}
+          resumeName={activeResumeName ?? "Selected resume"}
+          onConfirm={confirmPackage}
+          onCancel={() => {
+            setReviewingId(null);
+            if (!reviewing.assistPackage) replace(reviewing.id, { status: "queued" });
+          }}
+        />
+      )}
       {!canPrepare && applications.length > 0 && (
-        <p className="notice" role="status">
-          Before preparing, review the selected resume’s name and email and confirm your authorization
-          answers.
+        <p className="notice">
+          Review the selected resume’s contact details and confirm your authorization answers before preparing
+          a package. Sensitive answers stay manual on the employer’s form.
         </p>
       )}
       <div className="queue">
         {applications.length === 0 && (
-          <Empty title="Your queue is empty" text="Analyze a job and add it to the queue." />
+          <Empty title="Your queue is empty" text="Find a job and add it to the queue." />
         )}
-        {applications.map((application, index) => (
-          <article className="queue-item" key={application.id}>
-            <span className="queue-number">{String(index + 1).padStart(2, "0")}</span>
-            <div>
-              <h3>{application.job.title}</h3>
-              <p>
-                {application.job.company} · {application.job.provider ?? application.job.ats ?? "External"}
-              </p>
-              {application.resumeName && <small className="muted">Resume: {application.resumeName}</small>}
-            </div>
-            <span className={`state ${application.status}`}>{application.status.replaceAll("_", " ")}</span>
-            <div className="queue-actions">
-              {application.status === "queued" && (
-                <button
-                  disabled={
-                    Boolean(active) ||
-                    !canPrepare ||
-                    Boolean(application.resumeId && application.resumeId !== activeResumeId)
-                  }
-                  onClick={() => update(application.id, "ready")}
-                >
-                  Prepare
-                </button>
-              )}
-              {application.status === "queued" &&
-                (!canPrepare || Boolean(application.resumeId && application.resumeId !== activeResumeId)) && (
+        {applications.map((application, index) => {
+          const supported = Boolean(canonicalAssistUrl(application.job.canonicalUrl));
+          const wrongResume = Boolean(application.resumeId && application.resumeId !== activeResumeId);
+          return (
+            <article className="queue-item" key={application.id}>
+              <span className="queue-number">{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <h3>{application.job.title}</h3>
+                <p>
+                  {application.job.company} · {application.job.provider ?? application.job.ats ?? "External"}
+                </p>
+                {application.resumeName && <small className="muted">Resume: {application.resumeName}</small>}
+                {application.assistPackage && (
+                  <small className="muted">
+                    {" "}
+                    · Snapshot: {new Date(application.assistPackage.reviewedAt).toLocaleString()}
+                  </small>
+                )}
+              </div>
+              <span className={`state ${application.status}`}>
+                {application.status === "ready" && !application.assistPackage
+                  ? "Application opened manually"
+                  : (labels[application.status] ?? application.status.replaceAll("_", " "))}
+              </span>
+              <div className="queue-actions">
+                {supported && application.status !== "submitted" && (
+                  <button
+                    disabled={!canPrepare || wrongResume || !activeResumeId}
+                    onClick={() => {
+                      setReviewingId(application.id);
+                      replace(application.id, { status: "review_required" });
+                    }}
+                  >
+                    {application.assistPackage ? "Review new snapshot" : "Prepare"}
+                  </button>
+                )}
+                {supported && (!canPrepare || wrongResume) && (
                   <button onClick={() => onReview(application.resumeId)}>Review this resume</button>
                 )}
-              {application.status === "ready" && (
-                <a href={application.job.applyUrl} target="_blank" rel="noreferrer">
-                  Open form ↗
-                </a>
-              )}
-              {application.status === "ready" && (
-                <>
-                  <button onClick={() => update(application.id, "submitted")}>
-                    I submitted this application
+                {application.assistPackage && (
+                  <button onClick={() => downloadAssistPackage(application.assistPackage!)}>
+                    Download saved package
                   </button>
-                  <button onClick={() => update(application.id, "blocked")}>Needs manual help</button>
-                </>
+                )}
+                <a
+                  href={application.job.applyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() =>
+                    replace(application.id, {
+                      openedAt: new Date().toISOString(),
+                      ...(!supported ? { status: "ready" } : {})
+                    })
+                  }
+                >
+                  {supported ? "Open form ↗" : "Open application manually ↗"}
+                </a>
+                {!supported && <small>Extension autofill is unavailable for this source.</small>}
+                <button
+                  disabled={
+                    !application.openedAt ||
+                    application.status === "queued" ||
+                    application.status === "review_required"
+                  }
+                  onClick={() => {
+                    if (
+                      !application.openedAt ||
+                      application.status === "queued" ||
+                      application.status === "review_required"
+                    )
+                      return;
+                    setOutcomeId(application.id);
+                    setOutcome("submission_unknown");
+                    setOutcomeConfirmed(false);
+                  }}
+                >
+                  Record outcome
+                </button>
+                <button
+                  className="ghost-danger"
+                  onClick={() => {
+                    if (reviewingId === application.id) setReviewingId(null);
+                    if (outcomeId === application.id) setOutcomeId(null);
+                    onApplications(
+                      applications
+                        .filter((item) => item.id !== application.id)
+                        .map((item, queuePosition) => ({ ...item, queuePosition }))
+                    );
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+              {outcomeId === application.id && (
+                <div className="outcome-review" role="group" aria-label="Confirm application outcome">
+                  <p>
+                    Record what happened on the employer’s website. ApplyPilot cannot verify its submission.
+                  </p>
+                  <label className="field">
+                    <span>Application outcome</span>
+                    <select
+                      aria-label="Application outcome"
+                      value={outcome}
+                      onChange={(event) => {
+                        setOutcome(event.target.value as typeof outcome);
+                        setOutcomeConfirmed(false);
+                      }}
+                    >
+                      <option value="submission_unknown">I cannot confirm the outcome</option>
+                      <option value="submitted">I submitted on the employer’s website</option>
+                      <option value="blocked">I need manual help</option>
+                    </select>
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={outcomeConfirmed}
+                      onChange={(event) => setOutcomeConfirmed(event.target.checked)}
+                    />
+                    I confirm this is my report of the external application outcome.
+                  </label>
+                  <button
+                    disabled={!outcomeConfirmed}
+                    onClick={() => {
+                      replace(application.id, {
+                        status: outcome,
+                        outcomeSource: "self_report",
+                        ...(outcome === "submitted"
+                          ? { submissionConfirmedAt: new Date().toISOString() }
+                          : { submissionConfirmedAt: undefined })
+                      });
+                      setOutcomeId(null);
+                    }}
+                  >
+                    Save confirmed outcome
+                  </button>
+                  <button onClick={() => setOutcomeId(null)}>Cancel</button>
+                </div>
               )}
-              {application.status === "blocked" && (
-                <button onClick={() => update(application.id, "queued")}>Retry</button>
-              )}
-              <button
-                className="ghost-danger"
-                onClick={() =>
-                  onApplications(
-                    applications
-                      .filter((a) => a.id !== application.id)
-                      .map((a, queuePosition) => ({ ...a, queuePosition }))
-                  )
-                }
-              >
-                Remove
-              </button>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
     </section>
   );

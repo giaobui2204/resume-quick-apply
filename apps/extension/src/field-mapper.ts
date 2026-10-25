@@ -91,7 +91,7 @@ function isEligibleControl(element: HTMLInputElement | HTMLTextAreaElement | HTM
   return true;
 }
 
-export function fillField(match: FieldMatch) {
+export function fillField(match: Pick<FieldMatch, "element" | "value" | "protected">) {
   if (!match.value || match.protected || match.element.value || !isEligibleControl(match.element))
     return false;
   if (
@@ -114,4 +114,102 @@ export function fillField(match: FieldMatch) {
   if (match.element.value !== match.value) return false;
   match.element.dataset.applypilotFilled = "true";
   return true;
+}
+
+export type AssistMatch = Omit<FieldMatch, "key"> & {
+  id: string;
+  key: import("@quick-apply/shared").AssistFieldKey | null;
+  required: boolean;
+  reason: string;
+  source?: string;
+};
+
+export function discoverAssistFields(fields: import("@quick-apply/shared").AssistField[]): AssistMatch[] {
+  const supplied = new Map(fields.map((field) => [field.key, field]));
+  const elements = [
+    ...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+      "input, textarea, select"
+    )
+  ].filter((element) => {
+    if (element instanceof HTMLInputElement && ["hidden", "submit", "button", "reset"].includes(element.type))
+      return false;
+    for (let parent: HTMLElement | null = element; parent; parent = parent.parentElement) {
+      if (
+        parent.hidden ||
+        parent.hasAttribute("inert") ||
+        getComputedStyle(parent).display === "none" ||
+        getComputedStyle(parent).visibility === "hidden"
+      )
+        return false;
+    }
+    return true;
+  });
+  const matches = elements.map((element, index): AssistMatch => {
+    const label = fieldLabel(element);
+    const context = element.closest("fieldset")?.querySelector("legend")?.textContent ?? "";
+    const protectedField =
+      protectedPattern.test(`${label} ${context}`) ||
+      /\b(?:reference|referee|emergency contact)\b/i.test(context);
+    const normalized = label
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s*\*\s*$/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const aliases: [import("@quick-apply/shared").AssistFieldKey, RegExp][] = [
+      ["givenName", /^(?:first|given) name$/],
+      ["familyName", /^(?:(?:last|family) name|surname)$/],
+      ["legalName", /^(?:(?:full|legal|candidate) )?name$/],
+      ["email", /^e ?mail(?: address)?$/],
+      ["phone", /^(?:phone|mobile|telephone|tel)(?: number)?$/],
+      ["linkedIn", /^linked ?in(?: (?:url|profile|profile url))?$/],
+      ["location", /^(?:current )?location$/],
+      ["currentCompany", /^current (?:company|employer)$/],
+      ["currentJobTitle", /^current (?:job )?title$/],
+      ["school", /^(?:school|university|school \/ university|school name|university name)$/],
+      ["degree", /^degree$/],
+      ["fieldOfStudy", /^(?:field of study|major)$/],
+      ["skills", /^skills$/]
+    ];
+    let key = aliases.find(([, pattern]) => pattern.test(normalized))?.[0] ?? null;
+    const autocomplete = element.autocomplete?.trim().split(/\s+/).at(-1);
+    if (autocomplete === "given-name" && /^(?:name|first name|given name|unlabeled field)$/.test(normalized))
+      key = "givenName";
+    if (autocomplete === "family-name" && /^(?:name|last name|family name|unlabeled field)$/.test(normalized))
+      key = "familyName";
+    const field = key ? supplied.get(key) : undefined;
+    const eligible = isEligibleControl(element);
+    const reason = protectedField
+      ? "Protected answer · complete manually"
+      : !eligible
+        ? "Unsupported or unavailable control · complete manually"
+        : element.value
+          ? "Existing answer preserved"
+          : !field
+            ? "No reviewed value · complete manually"
+            : element instanceof HTMLSelectElement &&
+                ![...element.options].some((option) => option.value === field.value && !option.disabled)
+              ? "No exact option · complete manually"
+              : "Ready to review";
+    return {
+      id: `field-${index}`,
+      element,
+      label,
+      key: protectedField ? null : key,
+      value: reason === "Ready to review" ? field!.value : null,
+      protected: protectedField,
+      required: element.required || element.getAttribute("aria-required") === "true",
+      reason,
+      source: field
+        ? `${field.source.kind === "user" ? "Edited by you" : (field.source.label ?? `Resume ${field.source.section}`)} · ${field.source.field}`
+        : undefined
+    };
+  });
+  const counts = new Map<string, number>();
+  for (const match of matches) if (match.key) counts.set(match.key, (counts.get(match.key) ?? 0) + 1);
+  return matches.map((match) =>
+    match.key && (counts.get(match.key) ?? 0) > 1
+      ? { ...match, value: null, reason: "Repeated field · complete manually" }
+      : match
+  );
 }

@@ -1,0 +1,56 @@
+name: Validate and release
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Install Chrome for the application-assist fixture check
+        run: npx playwright install --with-deps chrome
+      - name: Verify reviewed handoff without real ATS submissions
+        run: |
+          npm run start -w @quick-apply/web -- --port 3100 > /tmp/applypilot-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:3100 > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:e2e:assist
+  release:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create one versioned release for this validated main push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_RUN: ${{ github.run_number }}
+        run: node scripts/release-main.cjs

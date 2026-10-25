@@ -11,12 +11,14 @@
     "dev:extension": "npm run dev -w @quick-apply/extension",
     "build": "npm run build -w @quick-apply/shared && npm run build -w @quick-apply/web && npm run build -w @quick-apply/extension",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:release",
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,jsx,cjs,css}\" \"packages/**/*.{ts,tsx,js,jsx}\" \"scripts/**/*.{js,cjs}\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,jsx,cjs,css}\" \"packages/**/*.{ts,tsx,js,jsx}\" \"scripts/**/*.{js,cjs}\"",
     "test:e2e": "node scripts/test-mvp.cjs",
     "test:e2e:guided": "node scripts/test-guided-mvp.cjs",
-    "test:e2e:search": "node scripts/test-job-search.cjs"
+    "test:e2e:search": "node scripts/test-job-search.cjs",
+    "test:release": "node --test scripts/test-release-main.cjs",
+    "test:e2e:assist": "node scripts/test-application-assist.cjs"
   },
   "overrides": {
     "postcss": "^8.5.18",

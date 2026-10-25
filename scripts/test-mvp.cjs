@@ -100,21 +100,20 @@ async function main() {
       await card.getByRole("button", { name: "Add to queue", exact: true }).click();
     await nav("Applications");
     await expect(page.locator(".queue-item")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "Record outcome", exact: true }).first()).toBeDisabled();
     await page.getByRole("button", { name: "Prepare", exact: true }).first().click();
-    await expect(page.getByRole("button", { name: "Prepare", exact: true })).toBeDisabled();
-    await page.getByRole("button", { name: "Needs manual help" }).click();
-    await expect(page.getByRole("button", { name: "Prepare", exact: true })).toBeEnabled();
-    await page.getByRole("button", { name: "Prepare", exact: true }).click();
-    await page.getByRole("button", { name: "I submitted this application" }).click();
-    await page.getByRole("button", { name: "Retry", exact: true }).click();
-    await page.getByRole("button", { name: "Prepare", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Review application package", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Confirm and download package", exact: true })
+    ).toBeDisabled();
+    await page.getByRole("button", { name: "Cancel review", exact: true }).click();
     await page.reload();
     await nav("Applications");
-    await expect(page.getByRole("link", { name: "Open form" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open form", exact: false })).toHaveCount(2);
     await page.getByRole("button", { name: "Remove", exact: true }).first().click();
     await expect(page.locator(".queue-item")).toHaveCount(1);
     console.log(
-      "PASS job validation/deduplication, sequential queue, blocked retry, manual submission, removal"
+      "PASS job validation/deduplication, review-before-prepare, outcome guard, queue persistence, removal"
     );
 
     await page.setViewportSize({ width: 390, height: 844 });
