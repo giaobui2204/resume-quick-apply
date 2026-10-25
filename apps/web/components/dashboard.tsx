@@ -1124,7 +1124,11 @@ function JobCard({ job, queued, onQueue }: { job: JobSnapshot; queued: boolean; 
             ? "View on Remotive ↗"
             : job.provider === "ashby"
               ? "Apply on Ashby ↗"
-              : "View posting ↗"}
+              : job.provider === "himalayas"
+                ? "View on Himalayas ↗"
+                : job.provider === "remoteok"
+                  ? "View on Remote OK ↗"
+                  : "View posting ↗"}
         </a>
         <button className="primary small" onClick={onQueue} disabled={queued}>
           {queued ? "In queue" : "Add to queue"}

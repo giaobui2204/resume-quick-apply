@@ -1,10 +1,10 @@
 # Multi-source job discovery
 
-Research and product direction, 2026-10-22. The request is to show a broad mix of job postings—like the breadth candidates find on LinkedIn and Indeed—instead of a feed from only three named companies. This is about discovery sources, not broadening the ATS form autofill feature.
+Research and product direction, updated 2026-10-25. The request is to show a broad mix of US job postings—like the breadth candidates find on LinkedIn and Indeed—with new-grad/junior roles first. This is about discovery sources, not broadening the ATS form autofill feature.
 
 ## Current state
 
-The original Jobs view fetched three employer-specific boards: Anthropic and Figma through Greenhouse, and Palantir through Lever. The first multi-source slice added Remotive's remote-only feed and LinkedIn/Indeed outbound search shortcuts. This continuation adds Ashby-backed public boards for Ramp, Linear and Lovable, broadening direct employer coverage across hybrid, onsite and remote work. LinkedIn and Indeed remain external search shortcuts, not imported feeds; the connected sources still do not cover the whole market.
+The Jobs view now searches 15 verified employer boards across Greenhouse, Lever and Ashby, plus Remotive, Remote OK and Himalayas. The employer registry includes Affirm, SpaceX, Scale AI, ID.me, True Anomaly, Commure, Cursor, Replit and AiPrise. Search defaults to entry-level/new-grad, limits results to explicit US evidence (or a provider's US eligibility filter), and has page-number navigation. LinkedIn and Indeed remain external search shortcuts, not imported feeds; these sources still do not cover the whole market.
 
 ## Access reality for LinkedIn and Indeed
 
@@ -20,15 +20,18 @@ These restrictions mean we should not promise a unified LinkedIn/Indeed inventor
 | Source | Coverage and access | Good fit / limitation |
 | --- | --- | --- |
 | Remotive | Public remote-job API; its guidance requires attribution and linking back, delays jobs by 24 hours, recommends no more than four fetches per day, and says the feed must not be gated behind signup. | A low-cost first integrated source for remote roles. It does not represent onsite/hybrid openings or the whole US market, and needs source-specific cache/freshness handling. |
+| Remote OK | Public JSON feed with a request to credit Remote OK and link directly to each Remote OK posting. Feed coverage is remote-only and the current sample frequently omits a country/location. | Integrated with a six-hour cache; ambiguous worldwide/remote records are excluded from US-only results unless their location explicitly indicates US eligibility. |
 | Ashby public job board API | Documented GET endpoint returns currently published postings for a known organization job-board name, including listing/apply URLs, workplace type, employment type and publication date when available. | A bounded registry can add verified employers with a single request per board. Start with Ramp, Linear and Lovable; only listed postings are shown. The 15-minute cache is ApplyPilot policy, not a published Ashby quota. Keep source and apply URLs distinct and keep ATS autofill capability explicit. |
-| Himalayas | Free public no-auth remote-job API intended for job-search products; no CORS, maximum 20 results per page, daily data refresh, attribution/linkback required, and listings must not be resubmitted to third-party aggregators. | Potential remote coverage expansion. Before integrating, design a bounded daily cache/pagination strategy that avoids per-query upstream requests and does not claim the API's full `totalCount` is locally searchable. |
+| Himalayas | Public no-auth remote-jobs API supports country, seniority, employment type and 20-result pages. It permits display in an app operated by us, requires the unchanged application link, visible Himalayas source link, and removal of expired jobs. | Integrated as a US-eligible remote source with source-specific pagination and approximate totals. Its city-level filter is unavailable; it is not a replacement for onsite/hybrid boards. |
+| SimplifyJobs New-Grad-Positions | Community-maintained README of new-grad roles, with mixed US/Canada/remote entries and ATS application links; no repository-wide content reuse license or public search API was identified. | Use as an employer discovery radar, not a job-feed mirror. Verify live direct ATS board IDs, query those employer feeds, and apply the US eligibility filter to live results. |
+| Jobright | Its public search UI demonstrates US-only scope, company/experience/job-type/work-model/date filters, and resume-based match scores. The site describes pulling from public company ATS boards and remote aggregators; it does not document a public data API for republishing its listings. | Use as a product reference for scope, filters, freshness and fit explanations. Do not scrape Jobright or import its inventory. |
 | The Muse | Public jobs API has filters and test access; broader/production use requires registration under its terms. | Potential structured source to evaluate after approval and access conditions are clear. |
 | Adzuna | Search API supports keyword/location listings and requires app credentials. Its terms describe no-payment evaluation access, then a 14-day commercial trial followed by licensing for commercial use. | Strong aggregator candidate if its coverage is useful and licensing/pricing fit. Do not ship a paid connector enabled by default or assume evaluation terms cover production. |
 | Jooble | Search API requires a key and region-specific setup. | Another aggregator to evaluate for coverage, rights, freshness and commercial terms before integration. |
 | USAJOBS | Official search API with an API key; US federal announcements only. | Useful optional source for federal roles, not a broad private-sector replacement. |
 | Greenhouse, Lever, Ashby and other ATS career boards | Public postings can be fetched per employer/board when the board identifier is known. | Expand the direct-employer registry to add verified employers across industries, locations and levels. It improves direct-source breadth but is not a global index by itself. |
 
-The current mix is six direct employer boards plus Remotive, with external LinkedIn/Indeed search shortcuts. The Jobs page now has a selected-source coverage disclosure with each board's checked/cached/unavailable state and latest successful app check. Evaluate The Muse, Adzuna and Jooble against actual coverage and access terms. Add Indeed's hosted publisher module only after its partner access is granted and only if its required presentation fits the product. Keep LinkedIn as an external search destination unless authorized inventory access becomes available.
+The current mix is 15 direct employer boards plus three integrated remote feeds, with external LinkedIn/Indeed search shortcuts. The Jobs page has a selected-source coverage disclosure and numbered pages; the default level is entry/new-grad. Next, expand employer boards from reviewed new-grad directories and school/community lists, but pull live roles from each employer ATS. Evaluate USAJOBS as a federal source after its API-key request is approved; it supports a Recent Graduates hiring path. Evaluate broader paid aggregators only after reviewing pricing and downstream display rights. Keep LinkedIn as an external search destination unless authorized inventory access becomes available.
 
 ## Recommended architecture
 
@@ -51,7 +54,7 @@ For common feeds, refresh centrally and serve cached normalized results to users
 
 - Replace the current one-source dropdown with a **Sources** control that lists only real integrations. Include **Search on LinkedIn** and **Search on Indeed** as visibly external actions, not result sources, until integrated access exists.
 - Show **Searching N connected sources** with a coverage disclosure listing each provider/employer, supported geography, last successful fetch and current status. Never make an unsupported source look connected with an empty result set.
-- Keep current filters, pagination and sort state consistent across providers. A source outage must preserve results from working sources and show which source failed.
+- Keep current filters, numbered pagination and sort state consistent across providers. A source outage must preserve results from working sources and show which source failed.
 - Preserve attribution in every card: **Found on [source]**, **Posted [date]** only when supplied, and the correct **Apply on employer site** or **View on [board]** destination. Show **Checked** separately from **Posted**; do not make stale data look new.
 - Group duplicate listings only when identity evidence is strong, displaying **Also listed on N sources** and keeping original links. A broken source link is not enough evidence that the job is closed.
 - Build LinkedIn/Indeed URLs from the applied query/location and open them in a new tab. Clearly label them **External search**; their counts and results remain outside ApplyPilot's feed and application queue until the user imports an individual supported job link.
@@ -64,18 +67,20 @@ Detailed UI treatment and edge states from the design agent are in [multi-source
 ### P0 — broaden discovery honestly without paid services
 
 1. **Done:** LinkedIn and Indeed external search shortcuts preserve the applied query/location and are clearly excluded from ApplyPilot's integrated result count.
-2. **Done:** job snapshots separate discovery provider from ATS; Remotive and Ashby source IDs, original URLs, attribution and known application destinations are preserved.
-3. Expand the direct-employer registry across more industries and role levels, verifying each board identifier and preserving source-specific errors.
+2. **Done:** job snapshots separate discovery provider from ATS; every integrated source retains its original URL, attribution and application destination.
+3. **Done:** add and verify more direct employer boards using Simplify's community list as a discovery reference; use live Greenhouse/Ashby feeds and filter to explicit US location evidence.
 4. **Done:** Remotive is integrated with attribution/linkback, its 24-hour upstream delay disclosed, and refresh throttled/cached for six hours in this single-server preview.
 5. **Done:** partial-source failures keep successful results; matching records are filtered before stable pagination and interleaved across feeds. Live results exposed an initial Anthropic-only page; deterministic round-robin now displays each connected feed early and rotates Remotive employers.
-6. **Done:** Ashby adapter adds verified Ramp, Linear and Lovable boards, filters explicitly unlisted jobs, retains secondary locations and valid publication dates, and maps supported workplace/employment metadata. Ashby remains outside extension autofill support.
+6. **Done:** Ashby adapter adds verified employer boards, filters explicitly unlisted jobs, retains secondary locations and valid publication dates, and maps supported workplace/employment metadata. Ashby remains outside extension autofill support.
+7. **Done:** Himalayas and Remote OK add attributed US-eligible remote listings. Himalayas uses its country/seniority filters and source pagination; Remote OK records without an explicit US location are dropped.
+8. **Done:** the Jobs view defaults to entry/new-grad, and page navigation replaces the displayed page while preserving the applied search and filters.
 7. **Done:** source coverage shows only the feeds actually selected, per-feed checked/cache/error state, and the last successful server response time. The general results timestamp is labeled as a search time, not a job-feed publication time.
 
 ### Delivered in the first slice
 
-The source filter includes Remotive and Ashby. Ashby records keep the hosted job URL, separate apply URL, known Ashby ATS, employer name, secondary locations, source attribution and valid source publication date. The first verified Ashby boards returned 171 Ramp, 34 Linear and 78 Lovable postings during integration checks; those are point-in-time counts, not permanent inventory. Ashby listings are interleaved with other boards before pagination. Extension filling remains limited to Greenhouse/Lever forms. Remotive is remote-only and delayed by a day. Neither connected inventory covers all jobs available on LinkedIn, Indeed or the wider market.
+Himalayas source search uses a country and seniority query; its API reports an estimated total and can return fewer than 20 rows on a page, so the UI labels the total approximate and allows traversal until an empty page. All boards includes its newest Himalayas page; the coverage panel links to the source-specific paginated view for more. Remote OK asks for its name and a direct followed link on each job. Direct boards with a generic “Remote” location are excluded from US-only results unless the listing states a US restriction. These sources still do not cover all jobs available on LinkedIn, Indeed or the wider market.
 
-Known gaps in this slice: coverage is six named employer boards plus a remote-only feed; LinkedIn and Indeed are external searches, not imported results. The employer registry is deliberately small and needs ongoing verified additions. Per-feed timestamps describe the last successful response checked by the app; provider/CDN data may itself be cached upstream. Remotive refresh happens on search requests, at most once per six hours per server; it is not a scheduled crawler. Ashby uses a 15-minute app cache policy. A multi-instance production deployment still needs shared cache/coordination for consistent freshness and provider request control.
+Known gaps in this slice: the employer registry remains finite, Remote OK often omits country restrictions, and Himalayas is remote-only. LinkedIn and Indeed are external searches, not imported results. Per-feed timestamps describe the last successful response checked by the app; provider/CDN data may itself be cached upstream. Remotive refresh happens on search requests, at most once per six hours per server; it is not a scheduled crawler. Ashby uses a 15-minute app cache policy and Himalayas a 24-hour policy. A multi-instance production deployment still needs shared cache/coordination for consistent freshness and provider request control.
 
 ### P1 — evaluate wider aggregators
 
@@ -112,6 +117,10 @@ These criteria describe the complete multi-source roadmap, not claims that the i
 - [Remotive remote jobs API](https://github.com/remotive-com/remote-jobs-api)
 - [Ashby Job Postings API](https://developers.ashbyhq.com/docs/public-job-posting-api)
 - [Himalayas Remote Jobs API and attribution terms](https://github.com/Himalayas-App/remote-jobs-api)
+- [Remote OK API and reuse instructions](https://remoteok.com/faq)
+- [SimplifyJobs New-Grad-Positions](https://github.com/SimplifyJobs/New-Grad-Positions)
+- [Jobright US job search](https://jobright.ai/jobs/search)
+- [USAJOBS API request and terms](https://developer.usajobs.gov/apirequest/index)
 - [The Muse API](https://www.themuse.com/developers/api/v2) and [API terms](https://www.themuse.com/developers/api/v2/terms)
 - [Adzuna API overview](https://developer.adzuna.com/overview), [search endpoint](https://developer.adzuna.com/docs/search), and [terms](https://developer.adzuna.com/docs/terms_of_service)
 - [Jooble REST API](https://jooblehelpcenter.freshdesk.com/en/support/solutions/articles/60001448238-rest-api-documentation)

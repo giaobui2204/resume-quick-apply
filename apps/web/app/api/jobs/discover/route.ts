@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     !Number.isInteger(offset) ||
     offset < 0 ||
     offset > 15000 ||
-    !["all", "greenhouse", "lever", "ashby", "remotive"].includes(source) ||
+    !["all", "greenhouse", "lever", "ashby", "remotive", "remoteok", "himalayas"].includes(source) ||
     !Number.isInteger(limit) ||
     limit < 1 ||
     limit > 50 ||
@@ -26,6 +26,15 @@ export async function GET(request: Request) {
     location.length > 120
   )
     return NextResponse.json({ error: "Invalid discovery filters." }, { status: 400 });
-  const result = await discoverJobs({ q, location, source, limit, offset, experience, workMode, employment });
+  const result = await discoverJobs({
+    q,
+    location,
+    source,
+    limit,
+    offset,
+    experience,
+    workMode,
+    employment
+  });
   return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
 }

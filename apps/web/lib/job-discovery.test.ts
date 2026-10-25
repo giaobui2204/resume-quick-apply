@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { discoverySources, normalizeFeed, postingText } from "./job-discovery";
+import { discoverySources, isUSJob, normalizeFeed, postingText } from "./job-discovery";
 
 describe("public job feed normalization", () => {
   it("normalizes Greenhouse and discards unsafe or malformed postings", () => {
@@ -57,12 +57,24 @@ it("coalesces parallel discovery requests, caches boards and reports partial fai
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input);
     if (url.includes("figma")) return new Response("unavailable", { status: 503 });
+    if (url.includes("ashbyhq")) return Response.json({ jobs: [] });
+    if (url.includes("himalayas")) return Response.json({ jobs: [], totalCount: 0 });
+    if (url.includes("remoteok")) return Response.json([{ legal: "terms" }]);
+    if (
+      url.includes("affirm") ||
+      url.includes("trueanomalyinc") ||
+      url.includes("spacex") ||
+      url.includes("scaleai") ||
+      url.includes("idmeuniversityrecruiting")
+    )
+      return Response.json({ jobs: [] });
     if (url.includes("lever"))
       return Response.json([
         {
           id: "abc-123",
           text: "Engineer",
           hostedUrl: "https://jobs.lever.co/palantir/abc-123",
+          categories: { location: "New York, NY" },
           descriptionPlain: "Team"
         }
       ]);
@@ -72,6 +84,7 @@ it("coalesces parallel discovery requests, caches boards and reports partial fai
           id: 123,
           title: "Engineer",
           absolute_url: "https://job-boards.greenhouse.io/anthropic/jobs/123",
+          location: { name: "New York, NY" },
           content: "A role"
         }
       ]
@@ -105,7 +118,7 @@ it("filters the entire board before paging and preserves exact explicit levels",
     id: index + 1,
     title: `${index < 35 ? "Senior Engineer" : "New Grad Engineer"} ${String(index).padStart(2, "0")}`,
     absolute_url: `https://job-boards.greenhouse.io/anthropic/jobs/${index + 1}`,
-    location: { name: "Remote" },
+    location: { name: "Remote - United States" },
     content: "Role"
   }));
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ jobs: rows }));
@@ -156,6 +169,134 @@ it("preserves Remotive provenance without inventing an ATS and rejects foreign l
   });
 });
 
+it("normalizes US-eligible Himalayas jobs with required attribution and unchanged apply URL", () => {
+  const source = discoverySources.find((item) => item.id === "himalayas")!;
+  const result = normalizeFeed(source, {
+    jobs: [
+      {
+        guid: "https://himalayas.app/companies/example/jobs/junior-engineer",
+        title: "Junior Engineer",
+        companyName: "Example",
+        employmentType: "Full Time",
+        seniority: ["Entry-level"],
+        locationRestrictions: ["United States"],
+        description: "<p>Build software</p>",
+        pubDate: 1792792800,
+        expiryDate: Math.floor(Date.now() / 1000) + 3600,
+        applicationLink: "https://himalayas.app/companies/example/jobs/junior-engineer?utm_source=api"
+      },
+      {
+        guid: "https://himalayas.app/companies/example/jobs/operations-intern",
+        title: "Operations Associate",
+        companyName: "Example",
+        employmentType: "Intern",
+        seniority: ["Entry-level"],
+        locationRestrictions: ["United States"],
+        applicationLink: "https://himalayas.app/companies/example/jobs/operations-intern"
+      },
+      {
+        guid: "https://himalayas.app/companies/example/jobs/canada-only",
+        title: "Canada role",
+        companyName: "Example",
+        locationRestrictions: ["Canada"],
+        applicationLink: "https://himalayas.app/companies/example/jobs/canada-only"
+      },
+      {
+        guid: "https://attacker.test/companies/example/jobs/fake",
+        title: "Fake role",
+        companyName: "Example",
+        applicationLink: "https://attacker.test/companies/example/jobs/fake"
+      }
+    ]
+  });
+  expect(result).toHaveLength(2);
+  expect(result[0]).toMatchObject({
+    ats: null,
+    provider: "himalayas",
+    company: "Example",
+    title: "Junior Engineer",
+    location: "Remote · United States",
+    applyUrl: "https://himalayas.app/companies/example/jobs/junior-engineer?utm_source=api",
+    attribution: { label: "Himalayas", url: "https://himalayas.app/companies/example/jobs/junior-engineer" },
+    postedDate: "2026-10-23",
+    classification: { experience: "entry", workMode: "remote", employment: "full_time" }
+  });
+  expect(result[1]).toMatchObject({
+    title: "Operations Associate",
+    classification: { experience: "intern", employment: "internship" }
+  });
+});
+
+it("normalizes Remote OK source links and keeps only explicit US locations eligible", () => {
+  const source = discoverySources.find((item) => item.id === "remoteok")!;
+  const jobs = normalizeFeed(source, [
+    { legal: "API terms" },
+    {
+      id: 123,
+      position: "Junior Engineer",
+      company: "Example",
+      location: "Remote - US",
+      url: "https://remoteok.com/remote-jobs/junior-engineer-example-123",
+      apply_url: "https://remoteok.com/remote-jobs/junior-engineer-example-123",
+      date: "2026-10-24T16:00:04+00:00",
+      description: "Build software"
+    }
+  ]);
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0]).toMatchObject({
+    provider: "remoteok",
+    attribution: { label: "Remote OK" },
+    postedDate: "2026-10-24",
+    location: "Remote - US"
+  });
+  expect(isUSJob(jobs[0]!)).toBe(true);
+  expect(isUSJob({ location: "Remote", provider: "remoteok" })).toBe(false);
+  expect(isUSJob({ location: "New York, NY", provider: "ashby" })).toBe(true);
+  expect(isUSJob({ location: "Remote - United Kingdom", provider: "ashby" })).toBe(false);
+});
+
+it("queries a selected Himalayas result page with the US and level filters", async () => {
+  const { vi } = await import("vitest");
+  vi.resetModules();
+  const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json({
+      totalCount: 42,
+      jobs: [
+        {
+          guid: "https://himalayas.app/companies/example/jobs/data-analyst",
+          title: "Data Analyst",
+          companyName: "Example",
+          seniority: ["Entry-level"],
+          employmentType: "Full Time",
+          locationRestrictions: ["United States"],
+          applicationLink: "https://himalayas.app/companies/example/jobs/data-analyst"
+        }
+      ]
+    })
+  );
+  try {
+    const { discoverJobs } = await import("./job-discovery");
+    const result = await discoverJobs({
+      source: "himalayas",
+      experience: "entry",
+      q: "data analyst",
+      offset: 20,
+      limit: 20
+    });
+    const requested = new URL(String(fetcher.mock.calls[0]![0]));
+    expect(Object.fromEntries(requested.searchParams)).toMatchObject({
+      country: "US",
+      seniority: "Entry-level",
+      q: "data analyst",
+      page: "2"
+    });
+    expect(result).toMatchObject({ offset: 20, total: 42, approximateTotal: 42, hasMore: true });
+    expect(result.jobs).toHaveLength(1);
+  } finally {
+    fetcher.mockRestore();
+  }
+});
+
 it("refreshes Remotive no more than once per six hours including failed attempts", async () => {
   const { vi } = await import("vitest");
   vi.resetModules();
@@ -186,18 +327,31 @@ it("interleaves all feeds and Remotive employers before stable pagination", asyn
     id: index,
     title: `Engineer ${index}`,
     company_name: company,
+    candidate_required_location: "USA",
     url: `https://remotive.com/remote-jobs/software-dev/engineer-${index}`,
     description: "Role"
   }));
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input);
+    if (
+      url.includes("affirm") ||
+      url.includes("trueanomalyinc") ||
+      url.includes("spacex") ||
+      url.includes("scaleai") ||
+      url.includes("idmeuniversityrecruiting")
+    )
+      return Response.json({ jobs: [] });
+    if (url.includes("ashbyhq")) return Response.json({ jobs: [] });
+    if (url.includes("himalayas")) return Response.json({ jobs: [], totalCount: 0 });
+    if (url.includes("remoteok")) return Response.json([{ legal: "terms" }]);
     if (url.includes("remotive")) return Response.json({ jobs: remoteRows });
     if (url.includes("lever"))
       return Response.json(
         Array.from({ length: 5 }, (_, id) => ({
           id: `lever-${id}`,
           text: `Engineer ${id}`,
-          hostedUrl: `https://jobs.lever.co/palantir/lever-${id}`
+          hostedUrl: `https://jobs.lever.co/palantir/lever-${id}`,
+          categories: { location: "New York, NY" }
         }))
       );
     const company = url.includes("figma") ? "figma" : "anthropic";
@@ -206,6 +360,7 @@ it("interleaves all feeds and Remotive employers before stable pagination", asyn
         id,
         title: `Engineer ${id}`,
         absolute_url: `https://job-boards.greenhouse.io/${company}/jobs/${id}`,
+        location: { name: "New York, NY" },
         content: "Role"
       }))
     });
