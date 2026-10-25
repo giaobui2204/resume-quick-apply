@@ -1,0 +1,4 @@
+{
+  "installCommand": "cd ../.. && npm ci",
+  "buildCommand": "cd ../.. && npm run build -w @quick-apply/shared && npm run build -w @quick-apply/web"
+}

@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Resume profiles remain in IndexedDB and other workspace data remains in browser-local storage. The optional H‑1B/PERM history drawer uses Supabase only when a database is configured and a DOL release has been imported; otherwise it reports that history is unavailable. Every profile field remains manually editable.
+Open `http://localhost:3000`. Resume profiles remain in IndexedDB and other workspace data remains in browser-local storage. The H‑1B/PERM history drawer reads published DOL data from the hosted service. End users do not need a Supabase account or need to import data. If the service has no published release yet or is temporarily unavailable, the app says so instead of showing invented filing numbers. Every profile field remains manually editable.
 
 ## Guided workflow and resume library
 
@@ -83,7 +83,7 @@ python scripts/import_dol_sponsorship.py
 
 `python scripts/import_dol_sponsorship.py --dry-run` downloads and validates the source files without writing to Postgres. Workbooks are downloaded to a temporary directory and removed after import. The importer stages a new release, validates row counts, then switches the published release in one transaction; a failed import leaves the previous release active.
 
-The manual **Refresh DOL sponsorship history** GitHub Action uses the same pinned importer. Before running it, apply all migrations to the hosted Supabase project, set `SUPABASE_DB_URL` as a GitHub Actions secret, and configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the web app. Update `scripts/dol-sponsorship-sources.json` only after a newer official DOL quarterly disclosure is available. The current FY2026 Q3 files cover determinations through June 30, 2026. No service-role key is used by the web API; the private database URL is used by the importer only.
+The **Refresh DOL sponsorship history** GitHub Action uses the same pinned importer. This is an operator task; users of the app never run it. Before running it, apply all migrations to the hosted Supabase project and set `SUPABASE_DB_URL` as a GitHub Actions secret. The web app needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Update `scripts/dol-sponsorship-sources.json` after a newer official DOL quarterly disclosure is available, then run the action. The current FY2026 Q3 files cover determinations through June 30, 2026. No service-role key is used by the web API; the private database URL is used by the importer only.
 
 ## Load the Chrome extension
 
@@ -97,11 +97,11 @@ The extension requests access only to Greenhouse and Lever. Open its popup, save
 
 ## Production setup
 
-1. Create a Supabase project and apply the migrations in `supabase/migrations` in order. Migration 0003 adds privacy-minimized DOL release tables, read-only policies, indexes, and the search RPC. The preview does not connect candidate profiles or applications to Supabase yet.
-2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the web app. These permit read-only queries of published public filing aggregates under RLS.
-3. Set `SUPABASE_DB_URL` only as a GitHub Actions secret for the importer, then run the manual refresh workflow. Do not expose it to the browser or set it as a `NEXT_PUBLIC_` variable.
-4. Create a private `resumes` storage bucket. Use a server-accessible AI provider in hosted deployments; `127.0.0.1` refers to the deployment server, not the end user’s computer.
-5. Complete privacy policy, retention policy, security review, extension pairing, and Chrome Web Store review.
+1. Import this repository into Vercel and set the project root to `apps/web`. Enable access to source files outside the root directory. `apps/web/vercel.json` installs the root npm workspaces and builds the shared package before Next.js. Set the production branch to `main`; pushes to `main` then deploy the full Next.js app, including its API routes. GitHub Pages cannot run these server routes.
+2. Create a managed Supabase project and apply migrations in `supabase/migrations` in order. Migration 0003 adds privacy-minimized DOL release tables, read-only policies, indexes, and the search RPC. Candidate profiles and applications remain in browser storage.
+3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel. Set `SUPABASE_DB_URL` only as a GitHub Actions secret, then run **Refresh DOL sponsorship history** once to publish the first release. Do not expose the database URL or a service-role key to the browser.
+4. Set `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` in Vercel for hosted resume extraction. The local Ollama default points to the user's computer during development and is not available to the hosted server.
+5. Complete privacy policy, retention policy, security review, extension pairing, and Chrome Web Store review before treating the app as production ready.
 
 ## Checkpoints
 
