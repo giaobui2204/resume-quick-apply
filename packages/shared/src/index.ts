@@ -114,7 +114,7 @@ export const PostedDateSchema = z
 export const JobSnapshotSchema = z.object({
   id: z.string(),
   ats: AtsSchema.nullable(),
-  provider: z.enum(["greenhouse", "lever", "ashby", "remotive"]).optional(),
+  provider: z.enum(["greenhouse", "lever", "ashby", "remotive", "himalayas", "remoteok"]).optional(),
   sourceUrl: z.string().url().optional(),
   attribution: z.object({ label: z.string(), url: z.string().url() }).optional(),
   externalId: z.string(),

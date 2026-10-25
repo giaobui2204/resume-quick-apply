@@ -17,12 +17,13 @@ type FeedStatus = {
   ats: string | null;
   status?: "loaded" | "cached" | "unavailable";
   checkedAt?: string;
+  hasMore?: boolean;
 };
 export const emptyDiscoveryCriteria: DiscoveryCriteria = {
   query: "",
   location: "",
   source: "all",
-  experience: "all",
+  experience: "entry",
   workMode: "all",
   employment: "all"
 };
@@ -72,6 +73,8 @@ export function JobDiscoveryPanel({
   const [total, setTotal] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [approximateTotal, setApproximateTotal] = useState(false);
   const [sourceErrors, setSourceErrors] = useState(false);
   const [lastChecked, setLastChecked] = useState("");
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
@@ -97,7 +100,7 @@ export function JobDiscoveryPanel({
   function update(key: keyof DiscoveryCriteria, value: string) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
-  async function discover(criteria: DiscoveryCriteria, offset = 0) {
+  async function discover(criteria: DiscoveryCriteria, requestedPage = 1) {
     if (lock.current || disabled) return;
     lock.current = true;
     const request = ++generation.current;
@@ -113,20 +116,22 @@ export function JobDiscoveryPanel({
         experience: criteria.experience,
         workMode: criteria.workMode,
         employment: criteria.employment,
-        limit: "30",
-        offset: String(offset)
+        limit: "20",
+        offset: String((requestedPage - 1) * 20)
       });
       const response = await fetch(`/api/jobs/discover?${params}`, { signal: controller.current.signal });
       const body = await response.json();
       if (request !== generation.current) return;
       if (!response.ok) throw new Error(body.error ?? "Could not discover jobs");
-      callbacks.current.onResults(body.jobs, offset > 0);
+      callbacks.current.onResults(body.jobs, false);
       setSourceErrors(Boolean(body.errors?.length));
       setFeeds(Array.isArray(body.sources) ? body.sources : []);
       setApplied(criteria);
       setTotal(body.total ?? body.jobs.length);
-      setLoaded(offset + body.jobs.length);
+      setLoaded((requestedPage - 1) * 20 + body.jobs.length);
       setHasMore(Boolean(body.hasMore));
+      setPage(requestedPage);
+      setApproximateTotal(Boolean(body.approximateTotal));
       setLastChecked(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
       if (body.errors?.length) callbacks.current.onError(body.errors.join(" · "));
     } catch (cause) {
@@ -158,7 +163,7 @@ export function JobDiscoveryPanel({
         className="search-workbench"
         onSubmit={(event) => {
           event.preventDefault();
-          void discover(draft);
+          void discover(draft, 1);
         }}
       >
         <div className="search-main-row">
@@ -213,10 +218,12 @@ export function JobDiscoveryPanel({
               onChange={(event) => update("source", event.target.value)}
             >
               <option value="all">All boards</option>
-              <option value="greenhouse">Greenhouse</option>
-              <option value="lever">Lever</option>
-              <option value="ashby">Ashby · Ramp, Linear, Lovable</option>
+              <option value="greenhouse">Greenhouse · 7 companies</option>
+              <option value="lever">Lever · Palantir</option>
+              <option value="ashby">Ashby · 7 companies</option>
               <option value="remotive">Remotive · remote jobs</option>
+              <option value="remoteok">Remote OK · remote jobs</option>
+              <option value="himalayas">Himalayas · US remote jobs</option>
             </select>
           </label>
           <details className="more-filters">
@@ -256,9 +263,12 @@ export function JobDiscoveryPanel({
           </details>
         </div>
         <p className="coverage-caption">
-          Company boards are checked on demand; Ashby uses a 15-minute cache policy. Remotive refreshes on
-          search at most every six hours and listings are delayed 24 hours. Ashby autofill is not supported.
-          Levels use explicit title signals; missing details stay “Not specified”.
+          Search is limited to US-eligible roles; new grad / junior is selected by default. Company boards are
+          checked on demand; Ashby uses a 15-minute cache policy. Remotive refreshes at most every six hours
+          and listings are delayed 24 hours. Himalayas has US-wide remote roles and paginated results; All
+          boards includes its latest page, and the source view browses remaining pages. Its feed does not
+          expose city-level locations. Remote OK results need an explicit US location signal. Levels use
+          explicit title signals; missing details stay “Not specified”.
         </p>
       </form>
       {feeds.length > 0 && (
@@ -280,6 +290,19 @@ export function JobDiscoveryPanel({
                         ? "Unavailable"
                         : "Status unknown"}
                 </span>
+                {feed.id === "himalayas" && feed.hasMore && applied.source !== "himalayas" && (
+                  <button
+                    className="browse-feed"
+                    type="button"
+                    onClick={() => {
+                      const next = { ...applied, source: "himalayas" };
+                      setDraft(next);
+                      void discover(next, 1);
+                    }}
+                  >
+                    Browse paginated Himalayas results
+                  </button>
+                )}
                 {feed.checkedAt && (
                   <time dateTime={feed.checkedAt}>
                     Checked{" "}
@@ -328,9 +351,9 @@ export function JobDiscoveryPanel({
               ? "Search incomplete"
               : total === null
                 ? "Your opportunities"
-                : `${total} opportunit${total === 1 ? "y" : "ies"}`}
+                : `${approximateTotal ? "About " : ""}${total} opportunit${total === 1 ? "y" : "ies"}`}
         </h2>
-        <p role="status">
+        <p role="status" aria-live="polite">
           {busy
             ? "Searching supported boards…"
             : importedCount !== null
@@ -341,7 +364,7 @@ export function JobDiscoveryPanel({
                   : "No matches. Try broader filters."
                 : total === null
                   ? ""
-                  : `Showing ${loaded} of ${total}${lastChecked ? ` · Searched ${lastChecked}` : ""}`}
+                  : `${loaded === (page - 1) * 20 ? `Page ${page} · no results on this page` : `Showing ${(page - 1) * 20 + 1}–${loaded} of ${approximateTotal ? "about " : ""}${total}`}${lastChecked ? ` · Searched ${lastChecked}` : ""}`}
         </p>
       </div>
       <div className="external-job-search">
@@ -368,14 +391,46 @@ export function JobDiscoveryPanel({
         </p>
       </div>
       {children}
-      {importedCount === null && hasMore && (
-        <button
-          className="secondary load-more-jobs"
-          disabled={busy || disabled}
-          onClick={() => void discover(applied, loaded)}
-        >
-          {busy ? "Loading…" : "Load more jobs"}
-        </button>
+      {importedCount === null && total !== null && total > 0 && (
+        <nav className="job-pagination" aria-label="Job result pages">
+          <button
+            className="secondary page-previous"
+            disabled={busy || disabled || page <= 1}
+            onClick={() => void discover(applied, page - 1)}
+          >
+            Previous
+          </button>
+          <div className="page-number-list">
+            {Array.from({ length: Math.min(5, Math.max(1, Math.ceil(total / 20))) }, (_, index) => {
+              const pageCount = Math.ceil(total / 20);
+              const firstPage = Math.min(Math.max(1, page - 2), Math.max(1, pageCount - 4));
+              const pageNumber = firstPage + index;
+              return pageNumber <= pageCount ? (
+                <button
+                  key={pageNumber}
+                  className={`page-number ${pageNumber === page ? "current" : ""}`}
+                  aria-label={`Page ${pageNumber}`}
+                  aria-current={pageNumber === page ? "page" : undefined}
+                  disabled={busy || disabled}
+                  onClick={() => void discover(applied, pageNumber)}
+                >
+                  {pageNumber}
+                </button>
+              ) : null;
+            })}
+          </div>
+          <span className="mobile-page-count">
+            Page {page}
+            {approximateTotal ? ` of about ${Math.ceil(total / 20)}` : ` of ${Math.ceil(total / 20)}`}
+          </span>
+          <button
+            className="secondary page-next"
+            disabled={busy || disabled || !hasMore || (!approximateTotal && page >= Math.ceil(total / 20))}
+            onClick={() => void discover(applied, page + 1)}
+          >
+            Next
+          </button>
+        </nav>
       )}
     </>
   );

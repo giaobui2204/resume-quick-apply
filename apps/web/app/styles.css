@@ -1219,6 +1219,18 @@ button:disabled {
   color: #7a837b;
   font-size: 11px;
 }
+.browse-feed {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #285d45;
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .applied-filters {
   display: flex;
   align-items: center;
@@ -1266,9 +1278,43 @@ button:disabled {
   color: #6b766b;
   margin: 0;
 }
-.jobs-page > .load-more-jobs {
-  align-self: center;
-  min-height: 46px;
+.job-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 20px;
+}
+.job-pagination > button {
+  min-height: 42px;
+  padding: 0 15px;
+}
+.page-number-list {
+  display: flex;
+  gap: 5px;
+}
+.page-number {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #d7ded0;
+  border-radius: 10px;
+  background: #fff;
+  color: #263d2e;
+  font: inherit;
+  cursor: pointer;
+}
+.page-number.current {
+  border-color: #183127;
+  background: #183127;
+  color: #fff;
+}
+.page-number:disabled,
+.job-pagination > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.mobile-page-count {
+  display: none;
 }
 .jobs-page .manual-import {
   margin: 0;
@@ -1369,6 +1415,18 @@ button:disabled {
   .opportunities-heading {
     flex-direction: column;
     gap: 7px;
+  }
+  .job-pagination {
+    justify-content: space-between;
+  }
+  .job-pagination .page-number-list {
+    display: none;
+  }
+  .job-pagination .mobile-page-count {
+    display: inline;
+    color: #536355;
+    font-size: 12px;
+    white-space: nowrap;
   }
   .source-coverage li {
     grid-template-columns: minmax(0, 1fr) auto;

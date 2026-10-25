@@ -25,6 +25,29 @@ const makeJob = (index, experience) => ({
 const jobs = [
   ...Array.from({ length: 30 }, (_, i) => makeJob(i, "senior")),
   ...Array.from({ length: 31 }, (_, i) => makeJob(i, "entry")),
+  ...Array.from({ length: 25 }, (_, index) => ({
+    ...makeJob(index, "entry"),
+    id: `himalayas-${index}`,
+    ats: null,
+    provider: "himalayas",
+    externalId: `himalayas-${index}`,
+    canonicalUrl: `https://himalayas.app/companies/acme/jobs/junior-engineer-${index}`,
+    sourceUrl: `https://himalayas.app/companies/acme/jobs/junior-engineer-${index}`,
+    attribution: {
+      label: "Himalayas",
+      url: `https://himalayas.app/companies/acme/jobs/junior-engineer-${index}`
+    },
+    applyUrl: `https://himalayas.app/companies/acme/jobs/junior-engineer-${index}?utm_source=api`,
+    company: "Acme Remote",
+    title: `Junior Remote Engineer ${index}`,
+    location: "Remote · United States",
+    classification: {
+      experience: "entry",
+      workMode: "remote",
+      employment: "part_time",
+      evidence: { experience: ["Entry-level provider metadata"], workMode: ["Remote"], employment: [] }
+    }
+  })),
   makeJob(0, "unknown"),
   {
     id: "remotive-1",
@@ -40,7 +63,7 @@ const jobs = [
     applyUrl: "https://remotive.com/remote-jobs/software-dev/distributed-engineer-1?ref=fixture",
     company: "Acme Remote",
     title: "Distributed Platform Engineer",
-    location: "Worldwide",
+    location: "Remote - Canada",
     description: "Fixture remote posting",
     capturedAt: new Date().toISOString(),
     classification: {
@@ -71,6 +94,30 @@ const jobs = [
       employment: "full_time",
       evidence: { experience: ["Explicit fixture"], workMode: ["Remote"], employment: ["Full-time"] }
     }
+  },
+  {
+    id: "remoteok-1",
+    ats: null,
+    provider: "remoteok",
+    externalId: "remoteok-1",
+    canonicalUrl: "https://remoteok.com/remote-jobs/junior-engineer-acme-1",
+    sourceUrl: "https://remoteok.com/remote-jobs/junior-engineer-acme-1",
+    attribution: {
+      label: "Remote OK",
+      url: "https://remoteok.com/remote-jobs/junior-engineer-acme-1"
+    },
+    applyUrl: "https://remoteok.com/remote-jobs/junior-engineer-acme-1",
+    company: "Acme Remote",
+    title: "Junior Engineer",
+    location: "Remote - US",
+    description: "Fixture remote US posting",
+    capturedAt: new Date().toISOString(),
+    classification: {
+      experience: "entry",
+      workMode: "remote",
+      employment: "full_time",
+      evidence: { experience: ["Explicit fixture"], workMode: ["Remote"], employment: ["Full-time"] }
+    }
   }
 ];
 const feeds = [
@@ -80,7 +127,18 @@ const feeds = [
   { id: "remotive", company: "Remotive", ats: null },
   { id: "ramp", company: "Ramp", ats: "ashby" },
   { id: "linear", company: "Linear", ats: "ashby" },
-  { id: "lovable", company: "Lovable", ats: "ashby" }
+  { id: "lovable", company: "Lovable", ats: "ashby" },
+  { id: "affirm", company: "Affirm", ats: "greenhouse" },
+  { id: "trueanomalyinc", company: "True Anomaly", ats: "greenhouse" },
+  { id: "spacex", company: "SpaceX", ats: "greenhouse" },
+  { id: "scaleai", company: "Scale AI", ats: "greenhouse" },
+  { id: "idmeuniversityrecruiting", company: "ID.me", ats: "greenhouse" },
+  { id: "commure", company: "Commure", ats: "ashby" },
+  { id: "cursor", company: "Anysphere (Cursor)", ats: "ashby" },
+  { id: "replit", company: "Replit", ats: "ashby" },
+  { id: "aiprise", company: "AiPrise", ats: "ashby" },
+  { id: "remoteok", company: "Remote OK", ats: null },
+  { id: "himalayas", company: "Himalayas", ats: null }
 ];
 
 async function main() {
@@ -99,7 +157,7 @@ async function main() {
       const matching = jobs.filter(
         (job) =>
           (!q || `${job.title} ${job.company}`.toLowerCase().includes(q)) &&
-          (!location || job.location.toLowerCase().includes(location)) &&
+          (source === "himalayas" || !location || job.location.toLowerCase().includes(location)) &&
           (source === "all" ||
             (source === "greenhouse"
               ? job.ats === "greenhouse"
@@ -112,7 +170,7 @@ async function main() {
           )
       );
       const offset = Number(params.get("offset") || 0);
-      const limit = Number(params.get("limit") || 30);
+      const limit = Number(params.get("limit") || 20);
       const selectedFeeds = feeds.filter(
         (feed) => source === "all" || source === feed.ats || source === feed.id
       );
@@ -120,6 +178,7 @@ async function main() {
         json: {
           jobs: matching.slice(offset, offset + limit),
           total: matching.length,
+          ...(source === "himalayas" ? { approximateTotal: matching.length } : {}),
           offset,
           limit,
           hasMore: offset + limit < matching.length,
@@ -127,6 +186,7 @@ async function main() {
           sources: selectedFeeds.map((feed) => ({
             ...feed,
             status: "loaded",
+            ...(feed.id === "himalayas" && source !== "himalayas" ? { hasMore: true } : {}),
             checkedAt: "2026-10-22T19:30:00Z"
           })),
           cachedUntil: new Date(Date.now() + 300000).toISOString()
@@ -135,13 +195,19 @@ async function main() {
     });
     await page.goto(process.env.APP_URL || "http://localhost:3000");
     await page.getByRole("button", { name: "Jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
+    await expect(page.locator(".job-card")).toHaveCount(20);
+    await page.locator(".source-coverage > summary").click();
+    await page.getByRole("button", { name: "Browse paginated Himalayas results", exact: true }).click();
+    await expect(page.locator(".job-card").first()).toContainText("Source: Himalayas");
+    await page.getByLabel("Job source", { exact: true }).selectOption("all");
+    await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+    await expect(page.locator(".job-card")).toHaveCount(20);
     await expect(page.getByRole("heading", { name: "Find your next move.", exact: true })).toBeVisible();
     await page.screenshot({ path: "/tmp/applypilot-search-desktop.png" });
     await page.getByLabel("Job keywords", { exact: true }).fill("Software Engineer");
     await page.getByLabel("Location", { exact: true }).fill("San Francisco, CA");
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
+    await expect(page.locator(".job-card")).toHaveCount(20);
     const linkedIn = new URL(
       await page.getByRole("link", { name: "Search LinkedIn ↗", exact: true }).getAttribute("href")
     );
@@ -158,34 +224,35 @@ async function main() {
     await page.getByLabel("Job keywords", { exact: true }).fill("");
     await page.getByLabel("Location", { exact: true }).fill("");
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
+    await expect(page.locator(".job-card")).toHaveCount(20);
     console.log("PASS LinkedIn and Indeed shortcuts carry applied keywords and location");
-    await page.getByRole("radio", { name: "Entry / new grad", exact: true }).check();
+    await page.locator('input[name="experience"][value="entry"]').check();
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
+    await expect(page.locator(".job-card")).toHaveCount(20);
     await expect(page.locator(".job-card").first()).toContainText("New Grad");
     await page.getByLabel("Job keywords", { exact: true }).fill("unsent draft");
-    await page.getByRole("button", { name: "Load more jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(32);
+    await page.getByRole("button", { name: "Page 2", exact: true }).click();
+    await expect(page.locator(".job-card")).toHaveCount(20);
     const last = requests.at(-1);
     if (last.experience !== "entry" || last.q !== "")
       throw new Error("Pagination did not retain submitted criteria");
-    await expect(page.getByRole("button", { name: "Load more jobs", exact: true })).toHaveCount(0);
-    console.log(
-      "PASS experience filter includes jobs beyond initial page, load more preserves applied criteria, no duplicates"
+    await expect(page.getByRole("button", { name: "Page 2", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page"
     );
+    console.log("PASS numbered pagination replaces pages and preserves applied criteria");
 
     await page.getByLabel("Job keywords", { exact: true }).fill("");
     await page.getByText("More filters", { exact: false }).click();
     await page.getByLabel("Work mode", { exact: true }).selectOption("remote");
     await page.getByLabel("Employment type", { exact: true }).selectOption("full_time");
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(6);
+    await expect(page.locator(".job-card")).toHaveCount(7);
     await page.getByRole("button", { name: /Remove experience filter/ }).click();
-    await expect(page.locator(".job-card")).toHaveCount(13);
+    await expect(page.locator(".job-card")).toHaveCount(14);
     await page.getByRole("button", { name: "Clear all", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
-    await page.getByRole("radio", { name: "Not specified", exact: true }).check();
+    await expect(page.locator(".job-card")).toHaveCount(20);
+    await page.locator('input[name="experience"][value="unknown"]').check();
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
     await expect(page.locator(".job-card")).toHaveCount(1);
     await expect(page.locator(".job-card")).toContainText("General Software Engineer");
@@ -198,9 +265,9 @@ async function main() {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByLabel("Job keywords", { exact: true }).fill("");
-    await page.getByRole("radio", { name: "Any level", exact: true }).check();
+    await page.locator('input[name="experience"][value="all"]').check();
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
+    await expect(page.locator(".job-card")).toHaveCount(20);
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth))
       throw new Error("Mobile search overflows");
     await page.getByLabel("Job source", { exact: true }).selectOption("remotive");
@@ -223,15 +290,31 @@ async function main() {
     await expect(page.locator(".job-card").first()).toContainText("Source: Ashby");
     await expect(page.locator(".job-card").first()).toContainText("Apply on Ashby");
     await expect(page.locator(".external-apply-note")).toBeVisible();
-    await expect(page.locator(".source-coverage summary")).toContainText("3 of 3 selected feeds available");
+    await expect(page.locator(".source-coverage summary")).toContainText("7 of 7 selected feeds available");
     await page.locator(".source-coverage > summary").click();
     await expect(page.locator(".source-coverage")).toContainText("Ramp");
     await expect(page.locator(".source-coverage")).toContainText("Checked");
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth))
       throw new Error("Mobile source coverage overflows");
+    await page.getByLabel("Job source", { exact: true }).selectOption("himalayas");
+    await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+    await expect(page.locator(".job-card")).toHaveCount(20);
+    await expect(page.locator(".job-card").first()).toContainText("Source: Himalayas");
+    await expect(page.locator(".job-card").first()).toContainText("View on Himalayas");
+    await expect(page.getByText(/About 25 opportunities/)).toBeVisible();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.locator(".job-card")).toHaveCount(5);
+    await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+    await page.getByLabel("Job source", { exact: true }).selectOption("remoteok");
+    await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+    await expect(page.locator(".job-card")).toHaveCount(1);
+    await expect(page.locator(".job-card").first()).toContainText("Source: Remote OK");
+    await expect(page.locator(".job-card").first()).toContainText("View on Remote OK");
+    if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth))
+      throw new Error("Mobile pagination or source labels overflow");
     await page.getByLabel("Job source", { exact: true }).selectOption("all");
     await page.getByRole("button", { name: "Find jobs", exact: true }).click();
-    await expect(page.locator(".job-card")).toHaveCount(30);
+    await expect(page.locator(".job-card")).toHaveCount(20);
     await page.screenshot({ path: "/tmp/applypilot-search-mobile.png" });
     await page.locator(".job-card").first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: "/tmp/applypilot-search-mobile-results.png" });
