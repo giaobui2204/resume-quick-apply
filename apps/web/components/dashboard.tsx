@@ -1147,6 +1147,7 @@ function ApplicationsView({
   onReview: (id?: string | null) => void;
 }) {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewPreviousStatus, setReviewPreviousStatus] = useState<Application["status"]>("queued");
   const [outcomeId, setOutcomeId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<"submitted" | "submission_unknown" | "blocked">(
     "submission_unknown"
@@ -1200,7 +1201,7 @@ function ApplicationsView({
           onConfirm={confirmPackage}
           onCancel={() => {
             setReviewingId(null);
-            if (!reviewing.assistPackage) replace(reviewing.id, { status: "queued" });
+            replace(reviewing.id, { status: reviewPreviousStatus });
           }}
         />
       )}
@@ -1243,6 +1244,13 @@ function ApplicationsView({
                   <button
                     disabled={!canPrepare || wrongResume || !activeResumeId}
                     onClick={() => {
+                      setReviewPreviousStatus(
+                        application.status === "review_required"
+                          ? application.assistPackage
+                            ? "ready"
+                            : "queued"
+                          : application.status
+                      );
                       setReviewingId(application.id);
                       replace(application.id, { status: "review_required" });
                     }}

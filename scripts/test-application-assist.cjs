@@ -110,6 +110,9 @@ const job = {
       false
     );
     await expect(page.getByText("Package prepared", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Review new snapshot", exact: true }).click();
+    await page.getByRole("button", { name: "Cancel review", exact: true }).click();
+    await expect(page.getByText("Package prepared", { exact: true })).toBeVisible();
     assert.equal(
       await page.evaluate(() => JSON.parse(localStorage.getItem("applypilot.applications"))[0].status),
       "ready"
