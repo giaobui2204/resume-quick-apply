@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@quick-apply/shared": "*",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.2",
     "mammoth": "^1.12.0",
     "next": "^15.2.0",
     "openai": "^4.86.1",
