@@ -36,6 +36,13 @@ alter table public.applications add column opened_at timestamptz;
 alter table public.applications add column outcome_source text
   check (outcome_source is null or outcome_source = 'self_report');
 
+-- Keep hash deduplication database-enforced across simultaneous device imports.
+-- The prior index also included hash-less manual resumes, which do not need it.
+drop index if exists public.resume_documents_live_hash;
+create unique index resume_documents_live_hash
+  on public.resume_documents(user_id, sha256)
+  where sha256 is not null and deleted_at is null;
+
 -- Work authorization sync requires a separate opt-in. Absence of a row means
 -- that sensitive answers remain on the current device.
 create table public.user_sync_preferences (
@@ -69,6 +76,22 @@ end;
 $$;
 create trigger application_job_owner before insert or update of job_id, user_id
 on public.applications for each row execute function public.check_application_job_owner();
+
+-- Foreign keys prove that a resume exists, but ownership must match the app.
+create or replace function public.check_application_resume_owner() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if new.resume_id is not null and not exists (
+    select 1 from public.resume_documents r where r.id = new.resume_id and r.user_id = new.user_id
+  ) then
+    raise exception 'Resume must belong to the application owner';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists application_resume_owner on public.applications;
+create trigger application_resume_owner before insert or update of resume_id, user_id
+on public.applications for each row execute function public.check_application_resume_owner();
 
 create function public.check_application_event_owner() returns trigger
 language plpgsql set search_path = '' as $$

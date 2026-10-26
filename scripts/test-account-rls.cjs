@@ -81,6 +81,7 @@ async function mustReject(promise, message) {
       file_name: "Synthetic resume",
       display_name: "Synthetic resume",
       byte_size: 0,
+      sha256: "b".repeat(64),
       status: "extracted",
       active: true,
       extraction: { schemaVersion: 1 },
@@ -88,6 +89,14 @@ async function mustReject(promise, message) {
     };
     const { error: resumeError } = await owner.from("resume_documents").insert(resume);
     if (resumeError) throw resumeError;
+    await mustReject(
+      owner.from("resume_documents").insert({ ...resume, id: crypto.randomUUID(), active: false }),
+      "Duplicate live resume hash was accepted for one account."
+    );
+    await mustReject(
+      owner.from("resume_documents").insert({ ...resume, id: crypto.randomUUID(), sha256: "c".repeat(64) }),
+      "Second active resume was accepted for one account."
+    );
     const ownerAppId = crypto.randomUUID();
     const ownerApp = {
       id: ownerAppId,
@@ -111,6 +120,15 @@ async function mustReject(promise, message) {
     if (hiddenAppsError) throw hiddenAppsError;
     assert.equal(hiddenApps.length, 0, "Other account can read the owner's application.");
 
+    const otherJobId = crypto.randomUUID();
+    const { error: otherJobError } = await other.from("jobs").insert({
+      ...ownerJob,
+      id: otherJobId,
+      user_id: otherData.user.id,
+      canonical_url: `https://example.test/jobs/${otherJobId}`
+    });
+    if (otherJobError) throw otherJobError;
+
     const foreignJobId = crypto.randomUUID();
     await mustReject(
       other.from("applications").insert({
@@ -121,6 +139,17 @@ async function mustReject(promise, message) {
         queue_position: 0
       }),
       "Cross-owner application -> job reference was accepted."
+    );
+    await mustReject(
+      other.from("applications").insert({
+        id: crypto.randomUUID(),
+        user_id: otherData.user.id,
+        job_id: otherJobId,
+        resume_id: resumeId,
+        status: "queued",
+        queue_position: 0
+      }),
+      "Cross-owner application -> resume reference was accepted."
     );
     await mustReject(
       other.from("application_events").insert({
@@ -137,13 +166,6 @@ async function mustReject(promise, message) {
       "Other account inserted a resume under the owner's ID."
     );
 
-    const { error: otherJobError } = await other.from("jobs").insert({
-      ...ownerJob,
-      id: crypto.randomUUID(),
-      user_id: otherData.user.id,
-      canonical_url: `https://example.test/jobs/${crypto.randomUUID()}`
-    });
-    if (otherJobError) throw otherJobError;
     console.log("Local Supabase RLS checks passed for owner isolation and cross-owner references.");
   } finally {
     for (const id of created) await admin.auth.admin.deleteUser(id);
