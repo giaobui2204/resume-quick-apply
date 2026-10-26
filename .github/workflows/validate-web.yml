@@ -17,15 +17,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run format:check
       - run: npm test
       - run: npm run typecheck
+      - name: Start local Supabase for account verification
+        run: npm exec -- supabase start
+      - name: Export local public Supabase config for the build
+        run: node scripts/export-local-supabase-public-env.cjs
       - run: npm run build
       - name: Install Chrome for the application-assist fixture check
         run: npx playwright install --with-deps chrome
+      - name: Verify local database row security
+        run: npm run test:accounts:rls
+      - name: Verify account import, sync, recovery, and isolation
+        run: npm run test:accounts:e2e
       - name: Verify reviewed handoff without real ATS submissions
         run: |
           npm run start -w @quick-apply/web -- --port 3100 > /tmp/applypilot-web.log 2>&1 &
@@ -36,6 +44,9 @@ jobs:
             sleep 1
           done
           npm run test:e2e:assist
+      - name: Stop local Supabase
+        if: always()
+        run: npm exec -- supabase stop --no-backup
   release:
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -21,6 +21,8 @@ import {
 
 import {
   loadResumeLibrary,
+  exportResumeLibrary,
+  replaceResumeLibrary,
   addResume,
   updateResume,
   selectResume,
@@ -32,6 +34,23 @@ import {
   findResumeByHash,
   type ResumeLibrary
 } from "@/lib/resume-library";
+import { AccountSettings } from "./account-settings";
+import {
+  emptyCloudResume,
+  hasLocalWorkspaceData,
+  importCloudWorkspace,
+  loadCloudWorkspace,
+  deleteCloudApplication,
+  persistApplication,
+  persistJob,
+  persistResume,
+  saveAuthorizationSync,
+  saveResumeLibraryCloud,
+  type CloudWorkspace,
+  type ResumeRecord
+} from "@/lib/cloud-workspace";
+import { createClient as createSupabaseClient } from "@/lib/supabase/client";
+import { configuredAuthProviders, supabaseConfig } from "@/lib/supabase/config";
 
 import { StepNavigation, flow, type View } from "./step-navigation";
 import { mergeJobs } from "@/lib/job-workspace";
@@ -58,39 +77,258 @@ export function Dashboard() {
   const pendingSaves = useRef(0);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [authCallbackError, setAuthCallbackError] = useState(false);
+  const [cloudUser, setCloudUser] = useState<{ id: string; email: string | null } | null>(null);
+  const [cloudLoadError, setCloudLoadError] = useState(false);
+  const [cloudActionError, setCloudActionError] = useState("");
+  const [cachedAccountLocked, setCachedAccountLocked] = useState(false);
+  const [cachedAccountEmail, setCachedAccountEmail] = useState("");
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+  const [unlockMessage, setUnlockMessage] = useState("");
+  const [unlockRecovery, setUnlockRecovery] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
+  const [confirmClearLockedCache, setConfirmClearLockedCache] = useState(false);
+  const [syncWorkAuthorization, setSyncWorkAuthorization] = useState(false);
+  const [pendingImport, setPendingImport] = useState<{
+    local: {
+      library: ResumeLibrary;
+      resumes: ResumeRecord[];
+      authorization: WorkAuthorization;
+      jobs: JobSnapshot[];
+      applications: Application[];
+    };
+    cloud: CloudWorkspace;
+    includeResumes: boolean;
+    includeJobs: boolean;
+    includeApplications: boolean;
+    includeWorkAuthorization: boolean;
+  } | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudSyncReady, setCloudSyncReady] = useState(false);
+  const [cloudSyncError, setCloudSyncError] = useState("");
+  const cloudSaveQueue = useRef(Promise.resolve());
+  const cloudSaveFailed = useRef(false);
+
+  function markLocalChange() {
+    if (cloudSyncReady) return;
+    const revision = Number(localStorage.getItem("applypilot.workspace.revision") ?? "0") + 1;
+    localStorage.setItem("applypilot.workspace.revision", String(revision));
+  }
+
+  function markPendingCloudChange() {
+    if (!cloudUser) return;
+    const revision = Number(localStorage.getItem("applypilot.workspace.revision") ?? "0") + 1;
+    localStorage.setItem("applypilot.workspace.revision", String(revision));
+    localStorage.setItem(`applypilot.cloud.pending.${cloudUser.id}`, "1");
+  }
 
   function persist<T>(key: string, value: T) {
     if (!writeLocal(key, value))
       setStorageError(
         "Changes are only saved for this session. Browser storage is unavailable or full; keep this tab open and enable local storage before refreshing."
       );
+    else markLocalChange();
+  }
+
+  function queueCloudSave(task: () => Promise<unknown>) {
+    if (!cloudSyncReady) return;
+    setCloudBusy(true);
+    cloudSaveQueue.current = cloudSaveQueue.current
+      .catch(() => undefined)
+      .then(task)
+      .then(() => {
+        if (!cloudUser || localStorage.getItem(`applypilot.cloud.pending.${cloudUser.id}`) !== "1") {
+          cloudSaveFailed.current = false;
+          setCloudSyncError("");
+        }
+      })
+      .catch(() => {
+        cloudSaveFailed.current = true;
+        markPendingCloudChange();
+        setCloudSyncError(
+          "This change is saved on this device, but cloud sync failed. Check your connection and try again."
+        );
+      })
+      .finally(() => setCloudBusy(false));
+  }
+
+  async function applyCloudWorkspace(cloud: CloudWorkspace, localApplications: Application[] = []) {
+    await replaceResumeLibrary(cloud.library, cloud.resumes);
+    setLibrary(cloud.library);
+    const active =
+      cloud.resumes.find(({ entry }) => entry.id === cloud.library.activeResumeId)?.profile ?? emptyResume;
+    setProfile(active);
+    setAuthorization(cloud.authorization);
+    setSyncWorkAuthorization(cloud.syncWorkAuthorization);
+    setJobs(cloud.jobs);
+    setApplications(
+      cloud.applications.map((application) => {
+        const local = localApplications.find(
+          (item) => item.id === application.id || item.job.canonicalUrl === application.job.canonicalUrl
+        );
+        return local
+          ? {
+              ...application,
+              fields: local.fields,
+              ...(local.assistPackage ? { assistPackage: local.assistPackage } : {})
+            }
+          : application;
+      })
+    );
   }
 
   useEffect(() => {
     let mounted = true;
-    const legacy = readLocal(profileKey, emptyResume, browserDraftResumeSchema);
-    void loadResumeLibrary(legacy)
-      .then(async (next) => {
-        const active = next.activeResumeId ? await loadResumeProfile(next.activeResumeId) : legacy;
+    void (async () => {
+      const legacy = readLocal(profileKey, emptyResume, browserDraftResumeSchema);
+      const localAuthorization = readLocal(authorizationKey, emptyAuthorization, storedAuthorizationSchema);
+      const localJobs = readLocal<JobSnapshot[]>(jobsKey, [], storedJobsSchema);
+      const localApplications = readLocal<Application[]>(applicationsKey, [], storedApplicationsSchema);
+      let localLibrary = { activeResumeId: null, resumes: [] } as ResumeLibrary;
+      let localResumes: ResumeRecord[] = [];
+      try {
+        localLibrary = await loadResumeLibrary(legacy);
+        const exported = await exportResumeLibrary();
+        localLibrary = exported.library;
+        localResumes = exported.entries;
+        const active =
+          localResumes.find(({ entry }) => entry.id === localLibrary.activeResumeId)?.profile ?? legacy;
         if (mounted) {
-          setLibrary(next);
+          setLibrary(localLibrary);
           setProfile(active);
         }
-      })
-      .catch(() => {
+      } catch {
         if (mounted) {
           setProfile(legacy);
-          setStorageError(
-            "Resume library is unavailable. Changes cannot be saved; check your browser storage settings."
-          );
+          setStorageError("Resume library is unavailable. Changes cannot be saved; check browser storage.");
         }
-      })
-      .finally(() => {
-        if (mounted) setReady(true);
-      });
-    setAuthorization(readLocal(authorizationKey, emptyAuthorization, storedAuthorizationSchema));
-    setJobs(readLocal<JobSnapshot[]>(jobsKey, [], storedJobsSchema));
-    setApplications(readLocal<Application[]>(applicationsKey, [], storedApplicationsSchema));
+      }
+      if (mounted) {
+        setAuthorization(localAuthorization);
+        setJobs(localJobs);
+        setApplications(localApplications);
+      }
+
+      let local = {
+        library: localLibrary,
+        resumes: localResumes,
+        authorization: localAuthorization,
+        jobs: localJobs,
+        applications: localApplications
+      };
+      let authenticatedUser: { id: string; email: string | null } | null = null;
+      if (supabaseConfig()) {
+        try {
+          const { data: auth, error } = await createSupabaseClient().auth.getUser();
+          if (error && error.name !== "AuthSessionMissingError") throw error;
+          const cachedOwner = localStorage.getItem("applypilot.cloud.owner");
+          if (!auth.user && cachedOwner) {
+            if (mounted) {
+              setCachedAccountLocked(true);
+              setCachedAccountEmail(localStorage.getItem("applypilot.cloud.owner.email") ?? "");
+              setReady(true);
+            }
+            return;
+          }
+          if (auth.user) {
+            authenticatedUser = { id: auth.user.id, email: auth.user.email ?? null };
+            if (mounted) setCloudUser(authenticatedUser);
+            if (cachedOwner && cachedOwner !== auth.user.id) {
+              await createSupabaseClient().auth.signOut({ scope: "local" });
+              if (mounted) {
+                setCloudUser(null);
+                setCachedAccountLocked(true);
+                setCachedAccountEmail(localStorage.getItem("applypilot.cloud.owner.email") ?? "");
+                setUnlockError(
+                  "This browser’s saved workspace belongs to another account. Sign in to that account or explicitly clear this device."
+                );
+                setReady(true);
+              }
+              return;
+            }
+            const cloud = await loadCloudWorkspace();
+            if (mounted) setCloudLoadError(false);
+            const hasLocalData = hasLocalWorkspaceData(local);
+            const revision = Number(localStorage.getItem("applypilot.workspace.revision") ?? "0");
+            const importedRevisionValue = localStorage.getItem(`applypilot.cloud.imported.${auth.user.id}`);
+            const importedRevision = Number(importedRevisionValue ?? "0");
+            const hasPendingCloudChanges =
+              localStorage.getItem(`applypilot.cloud.pending.${auth.user.id}`) === "1";
+            if (
+              hasLocalData &&
+              (hasPendingCloudChanges || importedRevisionValue === null || revision > importedRevision)
+            ) {
+              if (mounted) {
+                setPendingImport({
+                  local,
+                  cloud,
+                  includeResumes: local.resumes.length > 0,
+                  includeJobs: false,
+                  includeApplications: local.applications.length > 0,
+                  includeWorkAuthorization: false
+                });
+              }
+            } else if (cloud.resumes.length) {
+              await applyCloudWorkspace(cloud, local.applications);
+              if (mounted) setCloudSyncReady(true);
+              localStorage.setItem("applypilot.cloud.owner", auth.user.id);
+              if (auth.user.email) localStorage.setItem("applypilot.cloud.owner.email", auth.user.email);
+              localStorage.setItem(
+                `applypilot.cloud.imported.${auth.user.id}`,
+                localStorage.getItem("applypilot.workspace.revision") ?? "0"
+              );
+            } else if (local.resumes.length) {
+              const selected =
+                local.resumes.find(({ entry }) => entry.id === local.library.activeResumeId) ??
+                local.resumes[0]!;
+              await persistResume(selected, true);
+              const refreshed = await loadCloudWorkspace();
+              await applyCloudWorkspace(refreshed, local.applications);
+              if (mounted) setCloudSyncReady(true);
+              localStorage.setItem("applypilot.cloud.owner", auth.user.id);
+              if (auth.user.email) localStorage.setItem("applypilot.cloud.owner.email", auth.user.email);
+              localStorage.setItem(
+                `applypilot.cloud.imported.${auth.user.id}`,
+                localStorage.getItem("applypilot.workspace.revision") ?? "0"
+              );
+            } else {
+              const starter = emptyCloudResume();
+              await persistResume(starter, true);
+              const refreshed = await loadCloudWorkspace();
+              await applyCloudWorkspace(refreshed, localApplications);
+              if (mounted) setCloudSyncReady(true);
+              localStorage.setItem("applypilot.cloud.owner", auth.user.id);
+              if (auth.user.email) localStorage.setItem("applypilot.cloud.owner.email", auth.user.email);
+              localStorage.setItem(
+                `applypilot.cloud.imported.${auth.user.id}`,
+                localStorage.getItem("applypilot.workspace.revision") ?? "0"
+              );
+            }
+          }
+        } catch {
+          if (mounted && authenticatedUser) setCloudLoadError(true);
+          else if (mounted) {
+            try {
+              const { data } = await createSupabaseClient().auth.getSession();
+              if (data.session?.user) {
+                setCloudUser({ id: data.session.user.id, email: data.session.user.email ?? null });
+                setCloudLoadError(true);
+              } else {
+                setStorageError(
+                  "Cloud account could not be reached. Your local workspace is still available."
+                );
+              }
+            } catch {
+              setStorageError("Cloud account could not be reached. Your local workspace is still available.");
+            }
+          }
+        }
+      }
+      if (mounted) setReady(true);
+    })();
     return () => {
       mounted = false;
     };
@@ -100,14 +338,37 @@ export function Dashboard() {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [view]);
 
+  useEffect(() => {
+    if (pendingImport) document.getElementById("import-title")?.focus();
+  }, [pendingImport]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("auth_error") !== "callback_failed") return;
+    setAuthCallbackError(true);
+    url.searchParams.delete("auth_error");
+    window.history.replaceState({}, "", url);
+  }, []);
+
   function saveProfile(next: ResumeExtraction) {
     if (libraryBusy || !library.activeResumeId) return;
+    markLocalChange();
     setProfile(next);
     if (library.activeResumeId) {
       pendingSaves.current++;
       setSavingResume(true);
       void updateResume(library.activeResumeId, next)
-        .then((saved) => setLibrary((current) => ({ ...current, resumes: saved.resumes })))
+        .then((saved) => {
+          const updatedLibrary = { ...library, resumes: saved.resumes };
+          setLibrary(updatedLibrary);
+          if (cloudSyncReady) {
+            const entry = saved.resumes.find((item) => item.id === library.activeResumeId);
+            if (entry)
+              queueCloudSave(() =>
+                persistResume({ entry, profile: next }, entry.id === library.activeResumeId)
+              );
+          }
+        })
         .catch(() =>
           setStorageError(
             "Your resume changes could not be saved. Keep this tab open and check browser storage."
@@ -123,25 +384,54 @@ export function Dashboard() {
   function saveAuthorization(next: WorkAuthorization) {
     setAuthorization(next);
     persist(authorizationKey, next);
+    if (cloudSyncReady && syncWorkAuthorization) queueCloudSave(() => saveAuthorizationSync(next, true));
   }
 
-  function saveJobs(next: JobSnapshot[]) {
+  function saveJobs(next: JobSnapshot[], durable: JobSnapshot[] = []) {
     setJobs(next);
     persist(jobsKey, next);
+    if (durable.length)
+      queueCloudSave(async () => {
+        for (const job of durable) await persistJob(job);
+      });
   }
 
   function saveApplications(next: Application[]) {
+    const previous = applications;
     setApplications(next);
     persist(applicationsKey, next);
+    if (cloudSyncReady)
+      queueCloudSave(async () => {
+        for (const application of next) {
+          const before = previous.find((item) => item.id === application.id);
+          if (
+            !before ||
+            before.updatedAt !== application.updatedAt ||
+            before.status !== application.status ||
+            before.job.canonicalUrl !== application.job.canonicalUrl ||
+            before.resumeId !== application.resumeId
+          ) {
+            await persistApplication(application);
+          }
+        }
+        const retained = new Set(next.map((application) => application.id));
+        for (const application of previous)
+          if (!retained.has(application.id)) await deleteCloudApplication(application.id);
+      });
   }
 
   async function changeLibrary(action: () => Promise<ResumeLibrary>) {
     setLibraryBusy(true);
     try {
       const next = await action();
+      markLocalChange();
       const active = next.activeResumeId ? await loadResumeProfile(next.activeResumeId) : emptyResume;
       setLibrary(next);
       setProfile(active);
+      if (cloudSyncReady) {
+        const exported = await exportResumeLibrary();
+        queueCloudSave(() => saveResumeLibraryCloud(exported.library, exported.entries));
+      }
       return true;
     } catch {
       setStorageError(
@@ -153,13 +443,187 @@ export function Dashboard() {
     }
   }
 
+  async function confirmLocalImport() {
+    if (!pendingImport || importBusy) return;
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const local = pendingImport.local;
+      const resumes = pendingImport.includeResumes ? local.resumes : [];
+      const applications = pendingImport.includeApplications ? local.applications : [];
+      const selectedJobs = pendingImport.includeJobs ? local.jobs : [];
+      const jobByUrl = new Map<string, JobSnapshot>();
+      for (const job of [...selectedJobs, ...applications.map((application) => application.job)]) {
+        const previous = jobByUrl.get(job.canonicalUrl);
+        if (!previous || Date.parse(job.capturedAt) > Date.parse(previous.capturedAt))
+          jobByUrl.set(job.canonicalUrl, job);
+      }
+      const verified = await importCloudWorkspace({
+        library: pendingImport.includeResumes ? local.library : { activeResumeId: null, resumes: [] },
+        resumes,
+        jobs: [...jobByUrl.values()],
+        applications,
+        ...(pendingImport.includeWorkAuthorization ? { authorization: local.authorization } : {})
+      });
+      let finalCloud = verified;
+      if (!finalCloud.resumes.length) {
+        const starter = emptyCloudResume();
+        await persistResume(starter, true);
+        finalCloud = await loadCloudWorkspace();
+      }
+      await applyCloudWorkspace(finalCloud, local.applications);
+      localStorage.setItem(
+        `applypilot.cloud.imported.${finalCloud.userId}`,
+        localStorage.getItem("applypilot.workspace.revision") ?? "0"
+      );
+      localStorage.setItem("applypilot.cloud.owner", finalCloud.userId);
+      if (cloudUser?.email) localStorage.setItem("applypilot.cloud.owner.email", cloudUser.email);
+      localStorage.removeItem(`applypilot.cloud.pending.${finalCloud.userId}`);
+      setCloudSyncError("");
+      cloudSaveFailed.current = false;
+      setCloudUser((current) =>
+        current?.id === finalCloud.userId ? current : { id: finalCloud.userId, email: null }
+      );
+      setCloudSyncReady(true);
+      setPendingImport(null);
+    } catch (cause) {
+      setImportError(
+        cause instanceof Error
+          ? cause.message
+          : "The local workspace could not be imported. Your local data is unchanged."
+      );
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function continueAsGuest() {
+    try {
+      await createSupabaseClient().auth.signOut({ scope: "local" });
+    } finally {
+      window.location.assign("/");
+    }
+  }
+
+  async function clearCurrentDeviceWorkspace() {
+    await clearResumeLibrary();
+    for (const key of [
+      profileKey,
+      authorizationKey,
+      jobsKey,
+      applicationsKey,
+      "applypilot.workspace.revision"
+    ]) {
+      localStorage.removeItem(key);
+    }
+    if (cloudUser) localStorage.removeItem(`applypilot.cloud.imported.${cloudUser.id}`);
+    localStorage.removeItem("applypilot.cloud.owner");
+    localStorage.removeItem("applypilot.cloud.owner.email");
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("applypilot.cloud.pending.") || key.startsWith("applypilot.cloud.imported.")) {
+        localStorage.removeItem(key);
+      }
+    }
+  }
+
+  async function signOutAccount() {
+    await cloudSaveQueue.current;
+    if (cloudSaveFailed.current) {
+      throw new Error("Cloud sync needs attention. Retry or export your account before signing out.");
+    }
+    if (cloudUser && localStorage.getItem(`applypilot.cloud.pending.${cloudUser.id}`) === "1") {
+      throw new Error(
+        "This browser has unsynced changes. Reload and review the import to retry before signing out."
+      );
+    }
+    const { error } = await createSupabaseClient().auth.signOut({ scope: "global" });
+    if (error) throw error;
+    await clearCurrentDeviceWorkspace();
+    window.location.assign("/");
+  }
+
+  async function signOutUnavailableAccount() {
+    setCloudActionError("");
+    try {
+      await signOutAccount();
+    } catch (cause) {
+      setCloudActionError(cause instanceof Error ? cause.message : "Could not sign out.");
+    }
+  }
+
+  async function clearDeletedAccountCache() {
+    await clearCurrentDeviceWorkspace();
+  }
+
+  async function unlockCachedAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUnlockBusy(true);
+    setUnlockError("");
+    try {
+      const { error } = await createSupabaseClient().auth.signInWithPassword({
+        email: cachedAccountEmail,
+        password: unlockPassword
+      });
+      if (error) throw error;
+      window.location.reload();
+    } catch (cause) {
+      setUnlockError(cause instanceof Error ? cause.message : "Could not unlock this workspace.");
+    } finally {
+      setUnlockBusy(false);
+    }
+  }
+
+  async function unlockWithProvider(provider: "google" | "apple") {
+    setUnlockBusy(true);
+    setUnlockError("");
+    try {
+      const { error } = await createSupabaseClient().auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/auth/callback?next=/` }
+      });
+      if (error) throw error;
+    } catch (cause) {
+      setUnlockError(cause instanceof Error ? cause.message : `${provider} sign in is unavailable.`);
+      setUnlockBusy(false);
+    }
+  }
+
+  async function sendCachedAccountRecovery() {
+    setUnlockBusy(true);
+    setUnlockError("");
+    setUnlockMessage("");
+    try {
+      const { error } = await createSupabaseClient().auth.resetPasswordForEmail(cachedAccountEmail, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/?password_reset=1`
+      });
+      if (error) throw error;
+      setUnlockMessage("If an account exists for this email, a reset link is on its way.");
+    } catch (cause) {
+      setUnlockError(cause instanceof Error ? cause.message : "Could not send a password reset link.");
+    } finally {
+      setUnlockBusy(false);
+    }
+  }
+
+  async function clearLockedWorkspace() {
+    await createSupabaseClient().auth.signOut({ scope: "local" });
+    await clearCurrentDeviceWorkspace();
+    window.location.reload();
+  }
+
+  async function changeWorkAuthorizationSync(enabled: boolean) {
+    if (enabled) await saveAuthorizationSync(authorization, true);
+    else await saveAuthorizationSync(authorization, false);
+    setSyncWorkAuthorization(enabled);
+  }
+
   const profileReady = validContact(profile);
 
   if (!ready) return <main className="loading">Preparing your workspace…</main>;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={cloudLoadError || cachedAccountLocked ? "app-shell account-unavailable" : "app-shell"}>
+      <aside className="sidebar" aria-hidden={cloudLoadError || cachedAccountLocked || undefined}>
         <div className="brand">
           <span className="brand-mark">A</span>
           <div>
@@ -198,18 +662,41 @@ export function Dashboard() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" aria-hidden={cloudLoadError || cachedAccountLocked || undefined}>
         <header className="topbar">
           <div>
             <p className="eyebrow">INTERNATIONAL STUDENT CAREER TOOL</p>
           </div>
           <div className="status-pill">
-            <span /> Local preview
+            <span />{" "}
+            {cloudLoadError
+              ? "Account unavailable"
+              : cloudBusy
+                ? "Syncing workspace"
+                : cloudSyncError
+                  ? "Sync needs attention"
+                  : cloudSyncReady
+                    ? "Cloud workspace"
+                    : "Local workspace"}
           </div>
         </header>
         {storageError && (
           <div className="notice warning" role="alert">
             {storageError}
+          </div>
+        )}
+        {authCallbackError && (
+          <div className="notice warning" role="alert">
+            That sign-in or recovery link could not be completed. It may be expired; return to Settings and
+            try again.
+          </div>
+        )}
+        {cloudSyncError && (
+          <div className="notice warning" role="alert">
+            {cloudSyncError}
+            <button className="text-button" onClick={() => window.location.reload()}>
+              Reload to review and retry sync
+            </button>
           </div>
         )}
         {flow.some(([step]) => step === view) && (
@@ -311,6 +798,11 @@ export function Dashboard() {
         {view === "settings" && (
           <SettingsView
             busy={libraryBusy || savingResume}
+            user={cloudUser}
+            syncWorkAuthorization={syncWorkAuthorization}
+            onWorkAuthorizationSyncChange={changeWorkAuthorizationSync}
+            onSignOut={signOutAccount}
+            onAccountDeleted={clearDeletedAccountCache}
             onReset={() => {
               setLibraryBusy(true);
               void clearResumeLibrary()
@@ -338,6 +830,295 @@ export function Dashboard() {
           <StepNavigation view={view} navigate={setView} jobCount={applications.length} />
         )}
       </main>
+      {pendingImport && (
+        <div className="account-import-backdrop">
+          <section
+            className="account-import-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-title"
+            aria-describedby="import-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !importBusy) void continueAsGuest();
+              if (event.key === "Tab") {
+                const controls = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLElement>(
+                    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                  )
+                );
+                const first = controls[0];
+                const last = controls.at(-1);
+                if (event.shiftKey && document.activeElement === first) {
+                  event.preventDefault();
+                  last?.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first?.focus();
+                }
+              }
+            }}
+          >
+            <p className="eyebrow">YOUR DEVICE HAS SAVED DATA</p>
+            <h2 id="import-title" tabIndex={-1}>
+              Choose what to sync
+            </h2>
+            <p className="muted" id="import-description">
+              Nothing uploads until you confirm. Existing account records are merged by resume ID or file
+              hash, job URL, and application. Your local data stays here if import fails.
+            </p>
+            <div className="import-options">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={pendingImport.includeResumes}
+                  disabled={
+                    importBusy ||
+                    (pendingImport.includeApplications &&
+                      pendingImport.local.applications.some((item) => item.resumeId))
+                  }
+                  onChange={(event) =>
+                    setPendingImport({ ...pendingImport, includeResumes: event.target.checked })
+                  }
+                />
+                <span>
+                  Resume profiles and labels ({pendingImport.local.resumes.length})
+                  <small>Extracted profile facts only. Original PDF/DOCX files are not uploaded.</small>
+                </span>
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={pendingImport.includeApplications}
+                  disabled={importBusy}
+                  onChange={(event) =>
+                    setPendingImport({
+                      ...pendingImport,
+                      includeApplications: event.target.checked,
+                      includeResumes:
+                        event.target.checked && pendingImport.local.applications.some((item) => item.resumeId)
+                          ? true
+                          : pendingImport.includeResumes
+                    })
+                  }
+                />
+                <span>
+                  Application queue and outcomes ({pendingImport.local.applications.length})
+                  <small>
+                    Only queue status and job/resume links sync. Prepared answer packages stay on this device.
+                  </small>
+                </span>
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={pendingImport.includeJobs}
+                  disabled={importBusy}
+                  onChange={(event) =>
+                    setPendingImport({ ...pendingImport, includeJobs: event.target.checked })
+                  }
+                />
+                <span>
+                  Current job results as saved jobs ({pendingImport.local.jobs.length})
+                  <small>
+                    Future discovery feed pages stay temporary. Queued applications always include their job
+                    snapshot.
+                  </small>
+                </span>
+              </label>
+              <label className="check sensitive-sync-choice">
+                <input
+                  type="checkbox"
+                  checked={pendingImport.includeWorkAuthorization}
+                  disabled={importBusy}
+                  onChange={(event) =>
+                    setPendingImport({ ...pendingImport, includeWorkAuthorization: event.target.checked })
+                  }
+                />
+                <span>
+                  Sync work authorization answers (
+                  {pendingImport.local.authorization.confirmedAt
+                    ? "confirmed answers"
+                    : "answers not confirmed"}
+                  )
+                  <small>
+                    This includes visa type, dates, and sponsorship preferences. It stays on this device
+                    unless you separately choose this option.
+                  </small>
+                </span>
+              </label>
+            </div>
+            {importError && (
+              <p className="notice warning" role="alert">
+                {importError}
+              </p>
+            )}
+            <div className="account-actions">
+              <button disabled={importBusy} onClick={() => void confirmLocalImport()}>
+                {importBusy ? "Importing and verifying…" : "Import selected data"}
+              </button>
+              <button className="secondary" disabled={importBusy} onClick={() => void continueAsGuest()}>
+                Continue as guest
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {cloudLoadError && (
+        <div className="account-import-backdrop">
+          <section
+            className="account-import-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="cloud-error-title"
+          >
+            <p className="eyebrow">ACCOUNT SIGNED IN</p>
+            <h2 id="cloud-error-title">Your account workspace is unavailable</h2>
+            <p className="muted">
+              We could not verify the account data. This browser’s workspace is hidden until the account can
+              be loaded, so it cannot be mixed with another account.
+            </p>
+            <div className="account-actions">
+              <button onClick={() => window.location.reload()}>Retry connection</button>
+              <button className="secondary" onClick={() => void signOutUnavailableAccount()}>
+                Sign out and clear this browser
+              </button>
+            </div>
+            {cloudActionError && (
+              <p className="notice warning" role="alert">
+                {cloudActionError}
+              </p>
+            )}
+          </section>
+        </div>
+      )}
+      {cachedAccountLocked && (
+        <div className="account-import-backdrop">
+          <section
+            className="account-import-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="locked-account-title"
+          >
+            <p className="eyebrow">DEVICE WORKSPACE LOCKED</p>
+            <h2 id="locked-account-title">Sign in to unlock saved account data</h2>
+            <p className="muted">
+              This browser has account data{cachedAccountEmail ? ` for ${cachedAccountEmail}` : ""}. It stays
+              hidden, including unsynced changes, until that same account signs in.
+            </p>
+            <div className="auth-providers">
+              {configuredAuthProviders().google && (
+                <button
+                  className="secondary"
+                  disabled={unlockBusy}
+                  onClick={() => void unlockWithProvider("google")}
+                >
+                  Continue with Google
+                </button>
+              )}
+              {configuredAuthProviders().apple && (
+                <button
+                  className="secondary"
+                  disabled={unlockBusy}
+                  onClick={() => void unlockWithProvider("apple")}
+                >
+                  Continue with Apple
+                </button>
+              )}
+              {!configuredAuthProviders().google && (
+                <p className="provider-unavailable">Google sign-in is not configured for this deployment.</p>
+              )}
+              {!configuredAuthProviders().apple && (
+                <p className="provider-unavailable">
+                  Apple sign-in is unavailable until Apple Developer and Supabase credentials are configured.
+                </p>
+              )}
+            </div>
+            <form onSubmit={(event) => void unlockCachedAccount(event)}>
+              <label className="field">
+                <span>Account email</span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={cachedAccountEmail}
+                  onChange={(event) => setCachedAccountEmail(event.target.value)}
+                  required
+                />
+              </label>
+              {!unlockRecovery && (
+                <label className="field">
+                  <span>Password</span>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={unlockPassword}
+                    onChange={(event) => setUnlockPassword(event.target.value)}
+                    required
+                  />
+                </label>
+              )}
+              {unlockRecovery && (
+                <p className="muted">
+                  {configuredAuthProviders().emailDelivery
+                    ? "We will email a reset link to the account email above."
+                    : "Password recovery is unavailable until email delivery is configured."}
+                </p>
+              )}
+              {unlockError && (
+                <p className="notice warning" role="alert">
+                  {unlockError}
+                </p>
+              )}
+              {unlockMessage && (
+                <p className="notice success" role="status">
+                  {unlockMessage}
+                </p>
+              )}
+              <div className="account-actions">
+                {!unlockRecovery && (
+                  <button disabled={unlockBusy}>{unlockBusy ? "Signing in…" : "Sign in to unlock"}</button>
+                )}
+                {unlockRecovery && (
+                  <button
+                    type="button"
+                    disabled={unlockBusy || !configuredAuthProviders().emailDelivery}
+                    onClick={() => void sendCachedAccountRecovery()}
+                  >
+                    Send reset link
+                  </button>
+                )}
+              </div>
+            </form>
+            <button
+              className="text-button"
+              disabled={!configuredAuthProviders().emailDelivery && !unlockRecovery}
+              onClick={() => setUnlockRecovery((current) => !current)}
+            >
+              {unlockRecovery ? "Back to password sign in" : "Forgot password?"}
+            </button>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={confirmClearLockedCache}
+                onChange={(event) => setConfirmClearLockedCache(event.target.checked)}
+              />
+              <span>I understand clearing this browser deletes any unsynced account changes here.</span>
+            </label>
+            <button
+              className="secondary"
+              disabled={!confirmClearLockedCache}
+              onClick={() =>
+                void clearLockedWorkspace().catch((cause) =>
+                  setUnlockError(
+                    cause instanceof Error ? cause.message : "Could not clear the browser workspace."
+                  )
+                )
+              }
+            >
+              Clear this browser and continue as guest
+            </button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -858,7 +1639,7 @@ function JobsView({
   resumeName?: string;
   jobs: JobSnapshot[];
   applications: Application[];
-  onJobs: (jobs: JobSnapshot[]) => void;
+  onJobs: (jobs: JobSnapshot[], durableJobs?: JobSnapshot[]) => void;
   onApplications: (applications: Application[]) => void;
 }) {
   const [discovering, setDiscovering] = useState(false);
@@ -894,7 +1675,7 @@ function JobsView({
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not import jobs");
       if (controller.signal.aborted) return;
-      onJobs(mergeJobs(jobs, body.jobs));
+      onJobs(mergeJobs(jobs, body.jobs), body.jobs);
       setVisibleUrls(new Set(body.jobs.map((job: JobSnapshot) => job.canonicalUrl)));
       setImportedCount(new Set(body.jobs.map((job: JobSnapshot) => job.canonicalUrl)).size);
       setUrls("");
@@ -1369,13 +2150,36 @@ function ApplicationsView({
   );
 }
 
-function SettingsView({ onReset, busy }: { onReset: () => void; busy: boolean }) {
+function SettingsView({
+  onReset,
+  busy,
+  user,
+  syncWorkAuthorization,
+  onWorkAuthorizationSyncChange,
+  onSignOut,
+  onAccountDeleted
+}: {
+  onReset: () => void;
+  busy: boolean;
+  user: { id: string; email: string | null } | null;
+  syncWorkAuthorization: boolean;
+  onWorkAuthorizationSyncChange: (enabled: boolean) => Promise<void>;
+  onSignOut: () => Promise<void>;
+  onAccountDeleted: () => Promise<void>;
+}) {
   return (
     <section className="page narrow">
       <PageTitle
         eyebrow="SETTINGS"
-        title="Privacy and local preview"
-        text="This development build stores profile and queue data in your browser. Configure Supabase before production use."
+        title="Account and privacy"
+        text="Use guest mode on this device or sign in to back up selected workspace data across devices."
+      />
+      <AccountSettings
+        user={user}
+        workAuthorizationSync={syncWorkAuthorization}
+        onWorkAuthorizationSyncChange={onWorkAuthorizationSyncChange}
+        onSignOut={onSignOut}
+        onAccountDeleted={onAccountDeleted}
       />
       <div className="panel">
         <h3>Browser extension</h3>
@@ -1388,7 +2192,8 @@ function SettingsView({ onReset, busy }: { onReset: () => void; busy: boolean })
       <div className="panel danger-panel">
         <h3>Delete preview data</h3>
         <p className="muted">
-          Remove the resume profile, authorization answers, analyzed jobs, and queue from this browser.
+          Remove resume profiles, authorization answers, job results, and application history from this
+          browser. This does not delete your cloud account data.
         </p>
         <button
           className="danger"
