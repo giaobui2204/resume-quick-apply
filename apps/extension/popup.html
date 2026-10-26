@@ -1,38 +1,10 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ApplyPilot</title>
-    <style>
-      :root { font-family: system-ui, sans-serif; color: #15221d; }
-      body { margin: 0; width: 340px; background: #fbfaf6; }
-      header { background: #15221d; color: white; padding: 18px; }
-      header strong { color: #cde566; }
-      header p { margin: 4px 0 0; color: #acb8b2; font-size: 11px; }
-      main { padding: 17px; }
-      label { display: block; font-size: 10px; font-weight: 700; margin: 11px 0; }
-      input { width: 100%; box-sizing: border-box; margin-top: 5px; padding: 9px; border: 1px solid #ccd1c8; border-radius: 3px; }
-      button { width: 100%; border: 0; padding: 11px; background: #cde566; color: #15221d; font-weight: 800; border-radius: 3px; cursor: pointer; }
-      button:disabled { cursor: wait; opacity: .6; }
-      .note { margin: 13px 0; padding: 10px; background: #eef1e9; font-size: 10px; line-height: 1.5; }
-      #status { min-height: 15px; color: #39704d; font-size: 10px; margin-top: 9px; }
-    </style>
-  </head>
-  <body>
-    <header><strong>ApplyPilot</strong><p>Verified facts only. Review before submit.</p></header>
-    <main>
-      <form id="profile-form">
-        <label>Legal name<input id="legalName" autocomplete="name"></label>
-        <label>Email<input id="email" type="email" autocomplete="email"></label>
-        <label>Phone<input id="phone" autocomplete="tel"></label>
-        <label>LinkedIn URL<input id="linkedIn" type="url"></label>
-        <label>Current location<input id="location"></label>
-        <div class="note">Saved in Chrome Sync with an offline local backup. Click Save after making changes.</div>
-        <button id="save" type="submit">Save verified profile</button>
-      </form>
-      <div id="status" role="status"></div>
-    </main>
-    <script type="module" src="/src/popup.ts"></script>
-  </body>
-</html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ApplyPilot application assist</title>
+<style>
+:root { font-family: system-ui,sans-serif; color:#15221d; } body{margin:0;width:390px;background:#fbfaf6;} header{background:#15221d;color:#cde566;padding:18px;} header p{color:#d8dfd6;font-size:12px;}main{padding:16px;}h2{font-size:16px;}p,small{font-size:12px;line-height:1.5;overflow-wrap:anywhere;}label{display:block;font-size:13px;margin:10px 0;}input[type=file]{max-width:100%;}button{min-height:44px;background:#d8ed9f;border:1px solid #adbba0;border-radius:6px;padding:10px;width:100%;margin:6px 0;font-weight:650;}button:disabled{opacity:.5;}a{color:#345c40;} .note,#package-summary{background:#eaf0e4;padding:12px;border-radius:8px;}#status{font-size:12px;line-height:1.5;min-height:20px;white-space:pre-wrap;}#status.error{color:#983923;}.preview-row{padding:10px 0;border-bottom:1px solid #d6ddcf;}.preview-row label{display:flex;gap:9px;align-items:start;}.preview-row p{margin:6px 0;}small{color:#65705e;}input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #508250;outline-offset:2px;}
+</style></head><body><header><strong>ApplyPilot · Application assist</strong><p>Review once. Fill selected facts. Submit yourself.</p></header><main>
+<label>Import reviewed application package<input id="import" type="file" accept=".json,application/json"></label><div id="package-summary"></div>
+<button id="inspect">Review form fields</button><div id="field-preview" aria-label="Detected form fields"></div><button id="fill" disabled>Fill selected fields</button>
+<p class="note">Supported: Greenhouse and Lever hosted forms. Upload your original resume and answer legal, demographic, authorization, essay and unsupported questions manually. This extension never clicks Next or Submit.</p>
+<div id="status" role="status"></div><button id="clear">Delete imported package</button></main><script type="module" src="/src/popup.ts"></script></body></html>

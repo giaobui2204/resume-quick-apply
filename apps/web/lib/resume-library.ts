@@ -128,6 +128,30 @@ export async function loadResumeProfile(id: string): Promise<ResumeExtraction> {
   throw new Error("This resume could not be read. Select another resume or upload it again.");
 }
 
+export async function exportResumeLibrary() {
+  const library = await loadResumeLibrary();
+  const entries = await Promise.all(
+    library.resumes.map(async (entry) => ({ entry, profile: await loadResumeProfile(entry.id) }))
+  );
+  return { library, entries };
+}
+
+export async function replaceResumeLibrary(
+  library: ResumeLibrary,
+  entries: Array<{ entry: ResumeEntry; profile: ResumeExtraction }>
+): Promise<void> {
+  const db = await database();
+  const tx = db.transaction(["metadata", "profiles"], "readwrite");
+  const done = completed(tx);
+  tx.objectStore("metadata").put(validLibrary(library), metadataKey);
+  const profiles = tx.objectStore("profiles");
+  profiles.clear();
+  for (const { entry, profile } of entries) {
+    profiles.put(browserDraftResumeSchema.parse(profile), entry.id);
+  }
+  await done;
+}
+
 async function mutate(
   change: (lib: ResumeLibrary, profiles: IDBObjectStore) => ResumeLibrary
 ): Promise<ResumeLibrary> {

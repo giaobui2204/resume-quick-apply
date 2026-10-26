@@ -1,3 +1,5 @@
+import { ApplicationAssistPackageSchema } from "./application-assist";
+export * from "./application-assist";
 import { z } from "zod";
 
 export const VerificationSchema = z.object({
@@ -255,6 +257,10 @@ export const ApplicationSchema = z.object({
   queuePosition: z.number().int().nonnegative(),
   resumeId: z.string().nullable().optional(),
   resumeName: z.string().optional(),
+  assistPackage: ApplicationAssistPackageSchema.optional(),
+  openedAt: z.string().datetime().optional(),
+  submissionConfirmedAt: z.string().datetime().optional(),
+  outcomeSource: z.literal("self_report").optional(),
   blockedReason: BlockedReasonSchema.nullable(),
   fields: z.array(ApplicationFieldSchema).default([]),
   createdAt: z.string().datetime(),
